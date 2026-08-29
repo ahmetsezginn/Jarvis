@@ -1,0 +1,9 @@
+# Optional preferences only. Installed applications are discovered from Windows.
+
+[aliases]
+code = "Visual Studio Code"
+music = "Spotify"
+
+[applications]
+exclude = ["Example Application"]
+

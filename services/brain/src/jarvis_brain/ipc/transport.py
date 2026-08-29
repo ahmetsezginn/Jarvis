@@ -1,0 +1,13 @@
+"""Transport boundary used by the high-level Core client."""
+
+from typing import Protocol
+
+
+class IPCTransport(Protocol):
+    def connect(self, timeout: float) -> None: ...
+
+    def send(self, frame: bytes) -> None: ...
+
+    def receive(self, timeout: float) -> bytes: ...
+
+    def close(self) -> None: ...
