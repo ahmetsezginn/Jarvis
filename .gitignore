@@ -1,2 +1,44 @@
+# Build outputs
 /target/
 
+# Python environments and generated files
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.py[cod]
+**/*.egg-info/
+
+# Local AI / coding-agent files
+/.codex/
+/.agents/
+/.claude/
+/.cursor/
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
+/TASK_*.md
+/.github/copilot-instructions.md
+
+# Secrets and machine-local configuration
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+/config/preferences.toml
+*.local.toml
+
+# Logs, coverage, and temporary files
+*.log
+coverage.xml
+.coverage
+htmlcov/
+*.tmp
+*.temp
+
+# Editors and operating-system metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
