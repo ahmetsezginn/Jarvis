@@ -1,0 +1,9 @@
+# Official CUDA 12.4 Windows wheel; explicit provisioning only, not runtime download.
+llama-cpp-python @ https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.35-cu124/llama_cpp_python-0.3.35-py3-none-win_amd64.whl#sha256=84f7218c1e9cf21014b9770c65064c5a3674dd2f4fbc312c5d6bb40cec0fb269
+nvidia-cublas-cu12==12.4.5.8
+nvidia-cuda-runtime-cu12==12.4.127
+typing-extensions==4.16.0
+diskcache==5.6.3
+jinja2==3.1.6
+MarkupSafe==3.0.3
+numpy==2.5.2

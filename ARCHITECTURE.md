@@ -136,6 +136,13 @@ jarvis/
 │       ├── src/jarvis_brain/
 │       │   ├── core/
 │       │   ├── ipc/
+│       │   ├── intelligence/
+│       │   │   ├── models/
+│       │   │   ├── contract.py
+│       │   │   ├── fast_router.py
+│       │   │   ├── parser.py
+│       │   │   ├── orchestrator.py
+│       │   │   └── runtime.py
 │       │   └── cli.py
 │       └── tests/
 |
@@ -269,13 +276,76 @@ LocalProvider
 
 The brain should produce typed actions rather than executable shell text.
 
+### M003 Local Intent Runtime
+
+M003 selects Qwen3-0.6B, converted to a CPU-compatible INT4 ONNX Runtime GenAI artifact. The
+artifact is provisioned explicitly from a pinned upstream revision; runtime startup never
+downloads it. PyTorch, Transformers, and model conversion packages exist only in the isolated
+builder environment and are not production Brain dependencies.
+
+```text
+Validated user text
+        |
+        v
+Small deterministic Fast Router
+        |
+        +---- match -> semantic IntentResult
+        |
+        +---- fallback -> lazy QwenOnnxIntentModel
+                              |
+                              v
+                     constrained non-thinking output
+                              |
+                              v
+            strict JSON + schema + semantic validation
+                              |
+                              v
+                       confidence policy
+```
+
+The model adapter uses a 2,048-token maximum input context and a 128-token maximum output by
+default. Loading is lazy and exposes `unloaded`, `loading`, `ready`, and `failed` states. The
+Fast Router never loads the model. ONNX Runtime GenAI preview APIs and imports stay inside
+`QwenOnnxIntentModel`.
+
+The semantic contract is closed to `open_application`, `system_status`, `clarify`, and
+`unsupported`. This is intentionally not the Rust tool registry. The model cannot supply Core
+tool names, app IDs, executable paths, shell commands, or policy decisions. Invalid output fails
+closed and cannot reach the orchestrator.
+
+### Local-model replacement decision (2026-09-15)
+
+The user explicitly relaxed M003's ONNX-only selection to evaluate a stronger lightweight local
+model. `QwenGgufIntentModel` adds Qwen3-4B-Instruct-2507 Q4_K_M with a pinned llama-cpp-python
+CUDA runtime **in the Brain process**. The existing ONNX adapter remains a reproducible baseline.
+This is an explicit model/runtime deviation from M003, not a change to Core or IPC authority.
+There is no HTTP inference server, download-on-start, Python OS control or new Rust tool.
+Both providers implement IntentModel, use the same semantic contract and independent parser,
+and retain the 2048 input / 128 output token budgets. GGUF integrity is checked before native
+loading. Instruct-2507 uses its non-thinking-only chat template without the old think prefix.
+
+The CLI `repl` retains one Brain/model and Core connection for the session, releasing the model
+on exit. IntentContext still carries only budgets, not general conversation history.
+The 2026-09-17 bounded selection session adds one pending Rust ambiguity list (up to ten safe
+names/IDs, 120-second monotonic TTL, memory-only, private to each Brain instance). It displays
+numbered options and handles explicit ordinal/name replies before model inference, independently
+of the disabled Fast Router. This is a clarification state machine, not general language routing.
+The model never receives or chooses trusted IDs. A selected name is re-resolved through Rust;
+only a fresh ID matching the displayed candidate may reach open_app. Changed IDs fail closed.
+Selection is consumed before IPC, and cancellation, expiry or a new request clears it. Ambiguous
+"other" without a reference asks again instead of guessing. No state persists across CLI processes.
+The old stateless evaluation's context cases remain unmeasured by that harness; dedicated session
+tests cover the new interaction. General conversational memory is not implemented.
+Token budgets bound generation length; an in-process native inference call currently has no
+hard wall-clock cancellation guarantee. Process isolation/cancellation is a separate hardening item.
+
 ## 7. IPC Boundary
 
 ### Brain Process
 
-`jarvis-brain` is an independent Python 3.12+ process. In TASK-002 it is deliberately non-AI and
-contains only protocol models, a transport, `JarvisCoreClient`, safe orchestration helpers, and a
-development CLI. It has no application discovery, launcher, folder operation, system-status
+`jarvis-brain` is an independent Python 3.12+ process. TASK-002 established protocol models, the
+transport, `JarvisCoreClient`, and a development CLI. TASK-003 adds local intent understanding and
+orchestration, but no application discovery, launcher, folder operation, system-status
 implementation, shell execution, or copy of the Rust tool registry.
 
 ### Control Protocol
@@ -545,6 +615,14 @@ Model-based speech recognition and synthesis may live in Python/provider modules
 
 ## 13. Fast Path vs AI Path
 
+Temporary user-authorized diagnostic override: CLI `ask`, `repl`, and `predict` now skip the
+Fast Router by default. `--fast-router` (launcher `-FastRouter`) explicitly restores it.
+`JarvisBrain(fast_router_enabled=False)` makes the bypass explicit; the library/evaluator default
+remains enabled to preserve historical comparisons. Input validation, model JSON/semantic checks,
+confidence policy and Rust execution boundaries are unchanged. This does not fix model quality
+or add conversational support. `jarvis.ps1 -Model gguf` selects the new model for that invocation,
+restores the previous environment afterward, and displays the selected backend and routing mode.
+
 JARVIS should avoid unnecessary LLM calls.
 
 ### Fast Path
@@ -561,6 +639,11 @@ lock computer
 system status
 ```
 
+M003 implements a deliberately small deterministic router for obvious application-open and
+system-status phrases in Turkish and English. Missing application targets produce clarification;
+obvious path, shell, multi-action, and prompt-injection cases produce `unsupported`. Anything not
+obvious falls back to the local model instead of expanding the router into a second NLP system.
+
 ### AI Path
 
 Use for semantic or multi-step requests.
@@ -576,6 +659,19 @@ Examples:
 ```
 
 Both paths converge on the same action/policy/executor boundary.
+
+For application intents, convergence is always:
+
+```text
+human application query
+    -> JarvisCoreClient
+    -> resolve_app(query)
+    -> Rust-trusted app_id
+    -> open_app(app_id)
+```
+
+Ambiguity candidates come from Rust and are surfaced to the user. Brain never selects a candidate
+randomly and never launches a path.
 
 ## 14. Desktop UI
 
@@ -725,6 +821,17 @@ non-AI Python client package. The application catalog is refreshed once before t
 accepting requests and is shared for the service lifetime; live install/uninstall watching is not
 part of this milestone.
 
+### TASK-003 — Local Intelligence Runtime
+
+TASK-003 adds the local Qwen3-0.6B INT4 CPU adapter, strict semantic intent boundary, lazy loading,
+Fast Router, fixed orchestrator, natural-language CLI, reproducible model provisioning, benchmark
+harness, and online/offline Windows E2E coverage. It does not add voice, UI, cloud providers, RAG,
+reminders, autonomous loops, generic shell execution, or new Rust tools.
+
+ONNX Runtime GenAI constrained decoding is used to improve JSON shape, but it is not treated as a
+security boundary. The independent strict parser and semantic validator remain mandatory. This is
+an implementation detail consistent with, rather than a deviation from, the task architecture.
+
 ## 20. Architectural Invariants
 
 These rules should be treated as invariants until explicitly changed:
@@ -741,7 +848,19 @@ These rules should be treated as invariants until explicitly changed:
 10. Fast deterministic commands should not require expensive AI when avoidable.
 11. Application names resolve through platform discovery and the trusted catalog.
 12. `open_app` accepts only catalog-backed application IDs, never caller-provided paths.
+13. A language model emits only the closed semantic intent contract, never trusted Core values.
+14. Local model failure, missing artifacts, or invalid output cannot trigger a machine action.
+15. Runtime inference performs no model download and does not depend on PyTorch or Transformers.
 
 ## Final Architecture Statement
+
+### Brain evaluation before capability expansion (2026-09-15)
+
+`docs/brain/REQUIREMENTS.md` defines proposed conversational requirements and acceptance gates.
+The non-executing evaluator under `scripts/evaluation` measures current intent interfaces;
+history/evidence scenarios are explicitly reported as unsupported until a session interface exists.
+No production tool, model, protocol or semantic enum is changed by this assessment.
+Brain may eventually retain bounded safe Core-provided candidate metadata as advisory context;
+the authoritative catalog, current resolution, policy and launch targets remain inside Rust.
 
 > AI thinks. JARVIS Core decides. The computer acts.

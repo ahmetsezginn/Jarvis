@@ -1,0 +1,9 @@
+# Direct, conversion-only dependencies. Compile a full lock with:
+# python -m pip install -r requirements-build.in
+# python -m pip freeze > requirements-build.lock
+huggingface-hub==1.29.0
+onnx-ir==1.0.0
+onnxruntime-genai==0.15.2
+torch==2.13.0
+transformers==5.16.1
+truststore==0.10.4

@@ -49,3 +49,33 @@ class CoreResponseError(JarvisBrainError):
 
 class CoreToolError(CoreResponseError):
     """The existing Rust executor returned a typed tool failure."""
+
+
+class IntentValidationError(JarvisBrainError):
+    """A semantic intent failed the trusted Brain contract."""
+
+    code = "intent_validation_failed"
+
+
+class ModelArtifactMissing(JarvisBrainError):
+    """The explicitly provisioned local model artifact is unavailable."""
+
+    code = "model_artifact_missing"
+
+
+class ModelLoadError(JarvisBrainError):
+    """The local model or its runtime could not be loaded."""
+
+    code = "model_load_failed"
+
+
+class ModelInferenceError(JarvisBrainError):
+    """The local model failed while generating an intent."""
+
+    code = "model_inference_failed"
+
+
+class ModelOutputInvalid(JarvisBrainError):
+    """Untrusted model text did not satisfy the exact intent contract."""
+
+    code = "model_output_invalid"

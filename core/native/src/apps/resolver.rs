@@ -104,9 +104,28 @@ fn fuzzy_score(query: &str, candidate: &str) -> Option<u16> {
         return Some(180);
     }
 
+    if !query.contains(char::is_whitespace) {
+        let token_score = candidate
+            .split_whitespace()
+            .filter_map(|token| {
+                let token_compact = compact(token);
+                let distance = levenshtein(&query_compact, &token_compact);
+                (distance <= fuzzy_threshold(query_compact.len()))
+                    .then_some(110_u16.saturating_sub(distance as u16))
+            })
+            .max();
+        if token_score.is_some() {
+            return token_score;
+        }
+    }
+
     let distance = levenshtein(&query_compact, &candidate_compact);
-    let threshold = if query_compact.len() <= 4 { 1 } else { 2 };
-    (distance <= threshold).then_some(120_u16.saturating_sub(distance as u16))
+    (distance <= fuzzy_threshold(query_compact.len()))
+        .then_some(120_u16.saturating_sub(distance as u16))
+}
+
+fn fuzzy_threshold(query_length: usize) -> usize {
+    if query_length <= 4 { 1 } else { 2 }
 }
 
 fn compact(value: &str) -> String {
@@ -234,6 +253,23 @@ mod tests {
             .unwrap();
 
         assert_eq!(resolved.application().canonical_name(), "Spotify");
+    }
+
+    #[test]
+    fn resolves_typo_against_a_canonical_name_token() {
+        let directory = tempdir().unwrap();
+        let catalog = catalog(vec![test_application(
+            &directory,
+            "chrome",
+            "Google Chrome",
+            &[],
+        )]);
+
+        let resolved = DeterministicApplicationResolver
+            .resolve("crome", &catalog)
+            .unwrap();
+
+        assert_eq!(resolved.application().canonical_name(), "Google Chrome");
     }
 
     #[test]

@@ -45,7 +45,7 @@ class JarvisCoreClient:
         try:
             response = self._exchange(
                 "hello",
-                {"client": "jarvis-brain", "client_version": "0.1.0"},
+                {"client": "jarvis-brain", "client_version": config.BRAIN_VERSION},
             )
             if response.message_type != "hello_ack" or not isinstance(response.payload, dict):
                 raise ProtocolViolationError("Core returned an invalid hello response")
@@ -141,15 +141,39 @@ class JarvisCoreClient:
         return response
 
 
-def open_application(core: JarvisCoreClient, query: str) -> ToolResult:
+def open_application(
+    core: JarvisCoreClient, query: str, *, expected_app_id: str | None = None
+) -> ToolResult:
     """Resolve through Rust, then pass only the returned catalog app_id back to Rust."""
 
     if not isinstance(query, str) or not query.strip():
         raise ValueError("application query must be a non-empty string")
-    resolution = core.execute_tool("resolve_app", {"query": query})
+    try:
+        resolution = core.execute_tool("resolve_app", {"query": query})
+    except CoreToolError as error:
+        if expected_app_id is None or error.code != "application_ambiguous":
+            raise
+        candidates = error.details.get("candidates") if isinstance(error.details, dict) else None
+        if not isinstance(candidates, list):
+            raise ProtocolViolationError("resolve_app ambiguity omitted candidates") from error
+        matches = [
+            item
+            for item in candidates
+            if isinstance(item, dict)
+            and item.get("app_id") == expected_app_id
+            and item.get("name") == query
+        ]
+        if len(matches) != 1:
+            raise CoreToolError(
+                "application_selection_stale", "Selected application is no longer a candidate"
+            ) from error
+        # Use the ID from this fresh Rust response, not an index into a reordered list.
+        return core.execute_tool("open_app", {"app_id": matches[0]["app_id"]})
     if not isinstance(resolution.data, dict):
         raise ProtocolViolationError("resolve_app data must be an object")
     app = resolution.data.get("app")
     if not isinstance(app, dict) or not isinstance(app.get("app_id"), str):
         raise ProtocolViolationError("resolve_app did not return a catalog app_id")
+    if expected_app_id is not None and app["app_id"] != expected_app_id:
+        raise CoreToolError("application_selection_stale", "Application selection changed")
     return core.execute_tool("open_app", {"app_id": app["app_id"]})

@@ -8,6 +8,11 @@
 **/.ruff_cache/
 **/*.py[cod]
 **/*.egg-info/
+/scripts/models/.model-build/
+/scripts/models/cache/
+/scripts/models/source/
+/models/qwen3-0.6b-int4/*
+/models/qwen3-4b-gguf/*
 
 # Local AI / coding-agent files
 /.codex/
@@ -35,6 +40,7 @@ coverage.xml
 htmlcov/
 *.tmp
 *.temp
+/reports/benchmarks/*.json
 
 # Editors and operating-system metadata
 .idea/
