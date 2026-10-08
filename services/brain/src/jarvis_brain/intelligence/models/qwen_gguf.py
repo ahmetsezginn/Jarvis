@@ -18,7 +18,22 @@ from jarvis_brain.errors import ModelArtifactMissing, ModelInferenceError, Model
 from jarvis_brain.intelligence.contract import IntentContext, IntentResult
 from jarvis_brain.intelligence.models.base import ModelState
 from jarvis_brain.intelligence.parser import parse_model_output
-from jarvis_brain.intelligence.prompts import INTENT_JSON_SCHEMA, SYSTEM_PROMPT
+from jarvis_brain.intelligence.prompts import (
+    CONTEXT_PROMPT,
+    INTENT_JSON_SCHEMA,
+    REASONING_PROMPT,
+    build_conversation_messages,
+    build_user_payload,
+)
+from jarvis_brain.intelligence.request_routing import (
+    GGUF_ROUTE_PROMPT,
+    REPLY_PROMPT,
+    REPLY_SCHEMA,
+    ROUTE_SCHEMA,
+    RequestRoute,
+    parse_reply,
+    parse_route,
+)
 
 MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_REVISION = "a06e946bb6b655725eafa393f4a9745d460374c9"
@@ -32,15 +47,23 @@ def default_gguf_path() -> Path:
     return Path(__file__).resolve().parents[6] / "models/qwen3-4b-gguf" / MODEL_FILENAME
 
 
-def build_prompt(text: str) -> str:
-    if any(token in text for token in ("<|im_start|>", "<|im_end|>", "<think>", "</think>")):
-        raise ModelInferenceError("input contains reserved Qwen control tokens")
-    payload = json.dumps({"user_input": text}, ensure_ascii=False, separators=(",", ":"))
-    # Instruct-2507 is non-thinking-only: do not append the old Qwen3 think prefix.
-    return (
-        f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"
-        f"<|im_start|>user\n{payload}<|im_end|>\n<|im_start|>assistant\n"
+def build_prompt(
+    text: str,
+    context: IntentContext | None = None,
+    *,
+    system_prompt: str | None = None,
+    chat_history: bool = False,
+) -> str:
+    payload = build_user_payload(text, context)
+    user_messages = (
+        build_conversation_messages(text, context)
+        if chat_history
+        else f"<|im_start|>user\n{payload}<|im_end|>\n"
     )
+    system = system_prompt or REASONING_PROMPT
+    if system_prompt is None and context is not None and context.history:
+        system += "\n" + CONTEXT_PROMPT
+    return f"<|im_start|>system\n{system}<|im_end|>\n{user_messages}<|im_start|>assistant\n"
 
 
 class QwenGgufIntentModel:
@@ -52,6 +75,8 @@ class QwenGgufIntentModel:
         self._state = ModelState.UNLOADED
         self._model: Any = None
         self._grammar: Any = None
+        self._route_grammar: Any = None
+        self._reply_grammar: Any = None
         self._lock = threading.RLock()
         self.load_time_ms: float | None = None
         self.last_metrics: dict[str, Any] | None = None
@@ -89,6 +114,12 @@ class QwenGgufIntentModel:
                 self._grammar = runtime.LlamaGrammar.from_json_schema(
                     json.dumps(INTENT_JSON_SCHEMA), verbose=False
                 )
+                self._route_grammar = runtime.LlamaGrammar.from_json_schema(
+                    json.dumps(ROUTE_SCHEMA), verbose=False
+                )
+                self._reply_grammar = runtime.LlamaGrammar.from_json_schema(
+                    json.dumps(REPLY_SCHEMA), verbose=False
+                )
                 self._model = runtime.Llama(
                     model_path=str(self.model_path),
                     n_ctx=2304,
@@ -112,14 +143,28 @@ class QwenGgufIntentModel:
                 self._model.close()
             self._model = None
             self._grammar = None
+            self._route_grammar = None
+            self._reply_grammar = None
             self.last_metrics = None
             self._state = ModelState.UNLOADED
 
     def predict(self, text: str, context: IntentContext) -> IntentResult:
+        return parse_model_output(
+            self._generate(build_prompt(text, context), context, self._grammar)
+        )
+
+    def classify_request(self, text: str, context: IntentContext) -> RequestRoute:
+        prompt = build_prompt(text, context, system_prompt=GGUF_ROUTE_PROMPT)
+        return parse_route(self._generate(prompt, context, self._route_grammar))
+
+    def respond(self, text: str, context: IntentContext) -> str:
+        prompt = build_prompt(text, context, system_prompt=REPLY_PROMPT, chat_history=True)
+        return parse_reply(self._generate(prompt, context, self._reply_grammar))
+
+    def _generate(self, prompt: str, context: IntentContext, grammar: Any) -> str:
         with self._lock:
             if self._state is not ModelState.READY:
                 raise ModelInferenceError("GGUF model must be loaded before prediction")
-            prompt = build_prompt(text)
             try:
                 tokens = self._model.tokenize(prompt.encode("utf-8"), special=True)
                 if len(tokens) > context.max_context_tokens:
@@ -130,7 +175,7 @@ class QwenGgufIntentModel:
                     max_tokens=context.max_generated_tokens,
                     temperature=0,
                     repeat_penalty=1.0,
-                    grammar=self._grammar,
+                    grammar=grammar,
                     stop=["<|im_end|>"],
                     stream=False,
                 )
@@ -146,7 +191,7 @@ class QwenGgufIntentModel:
                 raise
             except Exception as error:
                 raise ModelInferenceError(f"Local GGUF inference failed: {error}") from error
-            return parse_model_output(output)
+            return output
 
     def model_info(self) -> dict[str, Any]:
         return {

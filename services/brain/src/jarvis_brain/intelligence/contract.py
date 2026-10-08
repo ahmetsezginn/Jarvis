@@ -22,6 +22,7 @@ _FORBIDDEN_APP_TERMS = re.compile(
 
 
 class IntentName(StrEnum):
+    RESPOND = "respond"
     OPEN_APPLICATION = "open_application"
     SYSTEM_STATUS = "system_status"
     CLARIFY = "clarify"
@@ -29,15 +30,32 @@ class IntentName(StrEnum):
 
 
 @dataclass(frozen=True)
+class ConversationTurn:
+    user: str
+    assistant: str
+
+
+@dataclass(frozen=True)
 class IntentContext:
     max_context_tokens: int = 2048
     max_generated_tokens: int = 128
+    history: tuple[ConversationTurn, ...] = ()
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_context_tokens <= 2048:
             raise ValueError("max_context_tokens must be between 1 and 2048")
         if not 1 <= self.max_generated_tokens <= 128:
             raise ValueError("max_generated_tokens must be between 1 and 128")
+        if not isinstance(self.history, tuple) or len(self.history) > 6:
+            raise ValueError("history must be a tuple of at most six turns")
+        if any(not isinstance(turn, ConversationTurn) for turn in self.history):
+            raise ValueError("history must contain ConversationTurn values")
+        if any(
+            not isinstance(s, str) for turn in self.history for s in (turn.user, turn.assistant)
+        ):
+            raise ValueError("conversation text must be strings")
+        if sum(len(t.user) + len(t.assistant) for t in self.history) > 2400:
+            raise ValueError("history exceeds character budget")
 
 
 @dataclass(frozen=True)
@@ -70,6 +88,8 @@ def validate_intent_object(value: Any, *, model_output: bool) -> IntentResult:
         raise error_type("intent result must contain only intent, confidence, and arguments")
 
     raw_intent = value["intent"]
+    if raw_intent == IntentName.RESPOND:
+        raise error_type("respond is a conversation response, not an executable intent")
     try:
         intent = IntentName(raw_intent)
     except (TypeError, ValueError) as error:

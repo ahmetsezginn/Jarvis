@@ -26,12 +26,16 @@ class FakeCore:
         return ToolResult("id", tool, "success", data, None)
 
 
-def test_fast_router_hit_does_not_load_model() -> None:
+def test_execution_still_uses_task_validation_with_legacy_router_enabled() -> None:
     core = FakeCore()
-    model = FakeIntentModel(IntentResult(IntentName.UNSUPPORTED, 1.0, {}))
+    model = FakeIntentModel(
+        IntentResult(IntentName.OPEN_APPLICATION, 1.0, {"query": "Google Chrome"})
+    )
     response = JarvisBrain(core, model).handle_text("Open Google Chrome")
-    assert response.route == "fast"
-    assert model.load_count == 0
+    assert response.route == "model"
+    assert model.load_count == 1
+    assert model.classify_count == 1
+    assert model.predict_count == 1
     assert [call[0] for call in core.calls] == ["resolve_app", "open_app"]
 
 

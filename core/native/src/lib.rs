@@ -16,7 +16,10 @@ use core::JarvisError;
 use executor::Executor;
 use platform::DesktopPlatform;
 use policy::DefaultPolicyEngine;
-use tools::{OpenAppTool, OpenFolderTool, ResolveAppTool, SystemStatusTool, ToolRegistry};
+use tools::{
+    OpenAppTool, OpenFolderTool, RefreshAppCatalogTool, ResolveAppTool, SystemStatusTool,
+    ToolRegistry,
+};
 
 /// Builds the single trusted execution pipeline used by every TASK-001 client.
 pub fn build_executor(
@@ -31,6 +34,7 @@ pub fn build_executor(
         catalog.clone(),
         Arc::new(DeterministicApplicationResolver),
     )))?;
+    registry.register(Arc::new(RefreshAppCatalogTool::new(catalog.clone())))?;
     registry.register(Arc::new(OpenAppTool::new(catalog)))?;
 
     Ok(Executor::new(

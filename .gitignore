@@ -1,6 +1,11 @@
 # Build outputs
 /target/
 
+# Local caches and generated assets / diagnostic recordings
+/.cache/
+/.tripo/
+/artifacts/
+
 # Python environments and generated files
 **/.venv/
 **/__pycache__/
@@ -11,18 +16,19 @@
 /scripts/models/.model-build/
 /scripts/models/cache/
 /scripts/models/source/
-/models/qwen3-0.6b-int4/*
-/models/qwen3-4b-gguf/*
+/models/*
+!/models/README.md
 
 # Local AI / coding-agent files
 /.codex/
 /.agents/
 /.claude/
 /.cursor/
-/AGENTS.md
 /CLAUDE.md
 /GEMINI.md
 /TASK_*.md
+# Canonical agent/ documents and the root AGENTS.md entry point are versioned.
+/scripts/shell/windows-profile.ps1
 /.github/copilot-instructions.md
 
 # Secrets and machine-local configuration
@@ -40,7 +46,7 @@ coverage.xml
 htmlcov/
 *.tmp
 *.temp
-/reports/benchmarks/*.json
+/reports/benchmarks/
 
 # Editors and operating-system metadata
 .idea/

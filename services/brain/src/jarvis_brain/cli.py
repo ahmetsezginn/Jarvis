@@ -11,6 +11,7 @@ from typing import Any
 
 from jarvis_brain.core.client import JarvisCoreClient, open_application
 from jarvis_brain.errors import JarvisBrainError
+from jarvis_brain.intelligence.contract import BrainResponse
 from jarvis_brain.intelligence.models.factory import create_intent_model
 from jarvis_brain.intelligence.runtime import JarvisBrain
 
@@ -32,13 +33,17 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("text")
     ask.add_argument("--force-model", action="store_true")
     repl = commands.add_parser("repl", help="interactive session retaining the loaded local model")
+    for command in (ask, repl):
+        command.add_argument("--json", action="store_true", help="show structured diagnostics")
     commands.add_parser("model-info", help="show local artifact and lazy model state")
     predict = commands.add_parser("predict", help="validate intent inference without executing it")
     predict.add_argument("--force-model", action="store_true", help="bypass only the Fast Router")
     predict.add_argument("text")
     for command in (ask, repl, predict):
         command.add_argument(
-            "--fast-router", action="store_true", help="opt into legacy fast routing"
+            "--fast-router",
+            action="store_true",
+            help="legacy routing for predict diagnostics; execution remains model-gated",
         )
     return parser
 
@@ -76,20 +81,17 @@ def run(arguments: Sequence[str] | None = None) -> int:
             tool_arguments = _json_object(parsed.arguments)
             _print_json(asdict(core.execute_tool(parsed.name, tool_arguments)))
         elif parsed.command == "ask":
-            _print_json(
-                asdict(
-                    JarvisBrain(core, model, fast_router_enabled=parsed.fast_router).handle_text(
-                        parsed.text, force_model=parsed.force_model
-                    )
-                )
+            response = JarvisBrain(core, model, fast_router_enabled=parsed.fast_router).handle_text(
+                parsed.text, force_model=parsed.force_model
             )
+            _print_response(response, json_output=parsed.json)
         elif parsed.command == "repl":
             brain = JarvisBrain(core, model, fast_router_enabled=parsed.fast_router)
             print(
                 f"Model: {type(model).__name__}; "
-                f"Fast Router: {'ON' if parsed.fast_router else 'OFF'}"
+                "Sohbet/görev ayrımı: ON; Fast Router: OFF (execution path)"
             )
-            print("JARVIS hazır. Çıkmak için exit veya çık yazın.")
+            print("JARVIS hazır. exit / çık: çıkış; /reset: bağlamı temizle.")
             try:
                 while True:
                     try:
@@ -101,17 +103,15 @@ def run(arguments: Sequence[str] | None = None) -> int:
                     if not text.strip():
                         continue
                     try:
-                        _print_json(asdict(brain.handle_text(text)))
+                        _print_response(brain.handle_text(text), json_output=parsed.json)
                     except JarvisBrainError as error:
-                        _print_json(
-                            {
-                                "ok": False,
-                                "error": {
-                                    "code": getattr(error, "code", type(error).__name__),
-                                    "message": str(error),
-                                },
-                            }
-                        )
+                        code = getattr(error, "code", type(error).__name__)
+                        if parsed.json:
+                            _print_json(
+                                {"ok": False, "error": {"code": code, "message": str(error)}}
+                            )
+                        else:
+                            print(f"JARVIS: [{code}] {error}")
             finally:
                 model.unload()
         else:
@@ -143,6 +143,13 @@ def _json_object(value: str) -> dict[str, Any]:
     if not isinstance(decoded, dict):
         raise ValueError("tool arguments must be a JSON object")
     return decoded
+
+
+def _print_response(response: BrainResponse, *, json_output: bool) -> None:
+    if json_output:
+        _print_json(asdict(response))
+    else:
+        print(f"JARVIS: {response.message}")
 
 
 def _print_json(value: Any, *, stream: Any = None) -> None:

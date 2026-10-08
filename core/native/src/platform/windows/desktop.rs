@@ -26,7 +26,15 @@ impl WindowsDesktopPlatform {
 impl DesktopPlatform for WindowsDesktopPlatform {
     fn open_application(&self, application: &DiscoveredApplication) -> Result<(), JarvisError> {
         let target = application.launch();
-        let path = target.path();
+        if let TrustedLaunchTarget::PackagedApplication { aumid } = target {
+            return crate::apps::windows::packaged::activate(aumid).map_err(|error| {
+                JarvisError::ApplicationLaunchFailed {
+                    app_id: application.app_id().to_string(),
+                    message: error.to_string(),
+                }
+            });
+        }
+        let path = target.path().expect("filesystem launch target");
         if !path.is_file() {
             return Err(JarvisError::ApplicationLaunchFailed {
                 app_id: application.app_id().to_string(),
@@ -40,6 +48,7 @@ impl DesktopPlatform for WindowsDesktopPlatform {
                     message: format!("could not normalize trusted launch target: {error}"),
                 })?;
         let launch_result = match target {
+            TrustedLaunchTarget::PackagedApplication { .. } => unreachable!(),
             TrustedLaunchTarget::Shortcut(_) => Command::new(trusted_explorer_path()?)
                 .arg(canonical_path)
                 .spawn(),

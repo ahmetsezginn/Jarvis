@@ -12,6 +12,10 @@ MAX_MODEL_OUTPUT_CHARS = 2048
 
 
 def parse_model_output(raw_output: str) -> IntentResult:
+    return validate_intent_object(parse_json_object(raw_output), model_output=True)
+
+
+def parse_json_object(raw_output: str) -> dict[str, Any]:
     if not isinstance(raw_output, str):
         raise ModelOutputInvalid("model output must be text")
     stripped = raw_output.strip()
@@ -29,7 +33,9 @@ def parse_model_output(raw_output: str) -> IntentResult:
         )
     except (json.JSONDecodeError, ValueError) as error:
         raise ModelOutputInvalid("model output is not strict JSON") from error
-    return validate_intent_object(value, model_output=True)
+    if not isinstance(value, dict):
+        raise ModelOutputInvalid("model output must be an object")
+    return value
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

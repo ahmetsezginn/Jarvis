@@ -180,3 +180,39 @@ interface. These commands do not connect to Core or open applications:
 Run from the repository root. Model/combined modes require the already provisioned artifact.
 Exit zero means measurement completed, not that the Brain meets release targets. Model-load
 failure terminates the run; per-request failures remain visible in its JSON report.
+
+## Session conversation memory
+
+The interactive `repl` keeps up to six recent user/assistant pairs within a 2400-character
+budget in memory. Both local models receive that context; model quality is still evaluated
+separately. Type `/reset` to clear conversation and pending app selection. Exiting discards
+memory. Separate `ask` commands do not share context. With history, contextual turns use the
+model even when `--fast-router` is enabled. See ../../docs/brain/SESSION_CONTEXT.md.
+
+## Readable terminal responses
+
+`ask` and `repl` now show the response message directly by default, after the existing
+Core result. Use `--json` on either command to retain full structured diagnostics.
+`predict`, `status`, `tool` and other diagnostic commands keep their JSON output.
+Application success notifications are deterministic Core-backed messages; this display
+change does not add general chat or change the closed intent contract.
+
+## No-action interpretation diagnostic
+
+Run `python -m scripts.evaluation.evaluate_reasoning --output reports/benchmarks/reasoning.json`
+from the repository root with the configured local provider. It never connects to Core.
+GGUF uses a refined decision prompt; ONNX retains its compact prompt. General chat and ordinary
+recall replies remain outside the four-intent contract. See ../../docs/brain/REASONING_DIAGNOSTIC.md.
+
+## Conversation versus tasks
+
+Interactive GGUF sessions first distinguish ordinary conversation from positive action/live
+inspection requests. Conversation gets a short local reply and never dispatches tools. Tasks
+continue through validated intents and Rust policy. `--json` exposes route=conversation and
+executed=false for replies. `--fast-router` is now diagnostic-only; executing sessions always
+use modality admission and task validation. ONNX is command-only and refuses conversation
+generation with a typed error. Session reset and memory limits remain unchanged.
+
+If the venv console launcher is missing but its base interpreter and packages still exist,
+jarvis.ps1 can use the existing interpreter recorded in pyvenv.cfg, with no download or reinstall.
+See ../../docs/brain/REQUEST_ROUTING.md for validation and limits.

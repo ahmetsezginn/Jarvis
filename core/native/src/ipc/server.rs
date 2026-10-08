@@ -401,7 +401,13 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            ["open_app", "open_folder", "resolve_app", "system_status"]
+            [
+                "open_app",
+                "open_folder",
+                "refresh_app_catalog",
+                "resolve_app",
+                "system_status"
+            ]
         );
     }
 

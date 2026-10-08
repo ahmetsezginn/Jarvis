@@ -16,6 +16,7 @@ $repositoryRoot = $PSScriptRoot
 $coreExecutable = Join-Path $repositoryRoot 'target\debug\jarvis-core.exe'
 $brainPython = Join-Path $repositoryRoot 'services\brain\.venv\Scripts\python.exe'
 $previousBackend = $env:JARVIS_MODEL_BACKEND
+$previousPythonPath = $env:PYTHONPATH
 if ($Model) { $env:JARVIS_MODEL_BACKEND = $Model }
 $routingArguments = @()
 if ($FastRouter) { $routingArguments = @('--fast-router') }
@@ -114,10 +115,29 @@ function Invoke-JarvisText([string]$UserText) {
 }
 
 try {
+    # A missing venv redirector can use its existing base interpreter and installed packages.
+    # Never download, replace security settings, or search for arbitrary executables.
+    if (-not (Test-Path -LiteralPath $brainPython -PathType Leaf)) {
+        $venvConfig = Join-Path $repositoryRoot 'services\brain\.venv\pyvenv.cfg'
+        $installedPackages = Join-Path $repositoryRoot 'services\brain\.venv\Lib\site-packages'
+        if ((Test-Path -LiteralPath $venvConfig -PathType Leaf) -and
+            (Test-Path -LiteralPath $installedPackages -PathType Container)) {
+            $baseEntry = Get-Content -LiteralPath $venvConfig | Where-Object { $_ -match '^executable = ' } | Select-Object -First 1
+            if ($baseEntry) {
+                $baseInterpreter = $baseEntry.Substring('executable = '.Length).Trim()
+                if (([IO.Path]::GetFileName($baseInterpreter) -eq 'python.exe') -and
+                    (Test-Path -LiteralPath $baseInterpreter -PathType Leaf)) {
+                    $brainPython = $baseInterpreter
+                    $env:PYTHONPATH = ((Join-Path $repositoryRoot 'services\brain\src'), $installedPackages, $previousPythonPath | Where-Object { $_ }) -join ';'
+                    Write-Host 'JARVIS: using the existing base Python interpreter; venv packages retained.'
+                }
+            }
+        }
+    }
     Assert-JarvisPrerequisites
     $selectedBackend = 'onnx'
     if ($env:JARVIS_MODEL_BACKEND) { $selectedBackend = $env:JARVIS_MODEL_BACKEND }
-    Write-Host "JARVIS model: $selectedBackend | Fast Router: $FastRouter"
+    Write-Host "JARVIS model: $selectedBackend | Sohbet/görev ayrımı: ON"
     Start-JarvisCore
     if ($Text) {
         Invoke-JarvisText $Text
@@ -130,6 +150,7 @@ try {
     }
 } finally {
     $env:JARVIS_MODEL_BACKEND = $previousBackend
+    $env:PYTHONPATH = $previousPythonPath
     if ($StopCoreOnExit -and $null -ne $startedCore -and -not $startedCore.HasExited) {
         Stop-Process -Id $startedCore.Id
     }

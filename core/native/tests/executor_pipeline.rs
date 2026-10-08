@@ -20,6 +20,133 @@ use tempfile::TempDir;
 
 struct FixedPolicy(PolicyDecision);
 
+#[test]
+fn refresh_tool_is_typed_atomic_and_policy_guarded() {
+    let directory = tempfile::tempdir().unwrap();
+    let discovery = Arc::new(FakeApplicationDiscovery::succeeding(vec![]));
+    let apps = Arc::new(ApplicationCatalog::new(
+        discovery.clone(),
+        ApplicationPreferences::default(),
+    ));
+    apps.refresh().unwrap();
+    discovery.set_result(Ok(vec![test_application(
+        &directory,
+        "new",
+        "New App",
+        &[],
+    )]));
+    let executor = jarvis_core::build_executor(
+        Arc::new(FakeDesktopPlatform::default()),
+        apps.clone(),
+        Arc::new(MemoryAuditSink::default()),
+    )
+    .unwrap();
+    for arguments in [json!({"path":"arbitrary"}), json!(null), json!([])] {
+        let response = executor.execute(ToolRequest::new(
+            "refresh_app_catalog",
+            arguments,
+            RequestSource::Brain,
+        ));
+        assert_ne!(response.status, ToolStatus::Success);
+        assert_eq!(apps.len(), 0);
+    }
+    let response = executor.execute(ToolRequest::new(
+        "refresh_app_catalog",
+        json!({}),
+        RequestSource::Brain,
+    ));
+    assert_eq!(response.status, ToolStatus::Success);
+    assert_eq!(response.data, json!({"refreshed":true,"discovered":1}));
+    discovery.set_result(Err(JarvisError::ApplicationDiscoveryFailed {
+        message: "test".into(),
+    }));
+    let failed = executor.execute(ToolRequest::new(
+        "refresh_app_catalog",
+        json!({}),
+        RequestSource::Brain,
+    ));
+    assert_ne!(failed.status, ToolStatus::Success);
+    assert_eq!(apps.len(), 1);
+    discovery.set_result(Ok(vec![]));
+    let mut registry = ToolRegistry::new();
+    registry
+        .register(Arc::new(jarvis_core::tools::RefreshAppCatalogTool::new(
+            apps.clone(),
+        )))
+        .unwrap();
+    let denied = Executor::new(
+        registry,
+        Arc::new(FixedPolicy(PolicyDecision::Deny {
+            reason: "test".into(),
+        })),
+        Arc::new(MemoryAuditSink::default()),
+        Arc::new(FakeDesktopPlatform::default()),
+    );
+    let result = denied.execute(ToolRequest::new(
+        "refresh_app_catalog",
+        json!({}),
+        RequestSource::Brain,
+    ));
+    assert_ne!(result.status, ToolStatus::Success);
+    assert_eq!(apps.len(), 1);
+}
+
+#[test]
+fn packaged_apps_use_catalog_ids_and_existing_policy_without_leaking_aumid() {
+    let identity = "Vendor.Product_hash!App";
+    let app = DiscoveredApplication::new(
+        ApplicationSource::WindowsAppsFolder,
+        identity,
+        "Packaged Test",
+        vec![],
+        None,
+        TrustedLaunchTarget::PackagedApplication {
+            aumid: identity.into(),
+        },
+    )
+    .unwrap();
+    let app_id = app.app_id().clone();
+    let apps = catalog(vec![app]);
+    assert_eq!(apps.len(), 1);
+    let platform = Arc::new(FakeDesktopPlatform::default());
+    let executor = jarvis_core::build_executor(
+        platform.clone(),
+        apps.clone(),
+        Arc::new(MemoryAuditSink::default()),
+    )
+    .unwrap();
+    let resolved = executor.execute(ToolRequest::new(
+        "resolve_app",
+        json!({"query":"Packaged Test"}),
+        RequestSource::Brain,
+    ));
+    assert_eq!(resolved.status, ToolStatus::Success);
+    assert!(!serde_json::to_string(&resolved).unwrap().contains(identity));
+    let opened = executor.execute(ToolRequest::new(
+        "open_app",
+        json!({"app_id":app_id}),
+        RequestSource::Brain,
+    ));
+    assert_eq!(opened.status, ToolStatus::Success);
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(OpenAppTool::new(apps))).unwrap();
+    let denied = Executor::new(
+        registry,
+        Arc::new(FixedPolicy(PolicyDecision::Deny {
+            reason: "test".into(),
+        })),
+        Arc::new(MemoryAuditSink::default()),
+        platform.clone(),
+    );
+    let result = denied.execute(ToolRequest::new(
+        "open_app",
+        json!({"app_id":app_id}),
+        RequestSource::Brain,
+    ));
+    assert_ne!(result.status, ToolStatus::Success);
+    assert_eq!(platform.calls().opened_applications.len(), 1);
+}
+
 impl PolicyEngine for FixedPolicy {
     fn evaluate(&self, _request: &ToolRequest, _metadata: &ToolMetadata) -> PolicyDecision {
         self.0.clone()
@@ -403,10 +530,17 @@ fn production_registry_contains_only_task_001_tools() {
 
     assert_eq!(
         names,
-        ["open_app", "open_folder", "resolve_app", "system_status"]
+        [
+            "open_app",
+            "open_folder",
+            "refresh_app_catalog",
+            "resolve_app",
+            "system_status"
+        ]
     );
     assert_eq!(metadata[0].risk_level, RiskLevel::Low);
     assert_eq!(metadata[1].risk_level, RiskLevel::Low);
     assert_eq!(metadata[2].risk_level, RiskLevel::ReadOnly);
     assert_eq!(metadata[3].risk_level, RiskLevel::ReadOnly);
+    assert_eq!(metadata[4].risk_level, RiskLevel::ReadOnly);
 }

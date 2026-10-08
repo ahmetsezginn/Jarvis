@@ -41,6 +41,7 @@ def test_open_application_always_resolves_human_query_then_uses_rust_app_id() ->
         route="model",
     )
     assert response.executed
+    assert response.message == "Chrome a\u00e7\u0131ld\u0131."
     assert core.calls == [
         ("resolve_app", {"query": "Google Chrome"}),
         ("open_app", {"app_id": "trusted-from-rust"}),
@@ -78,3 +79,11 @@ def test_clarify_and_unsupported_never_call_core() -> None:
     unsupported = orchestrator.execute(IntentResult(IntentName.UNSUPPORTED, 1.0, {}), route="model")
     assert not clarify.executed and not unsupported.executed
     assert core.calls == []
+
+
+def test_notification_uses_rust_name_not_model_typo():
+    response = IntentOrchestrator(FakeCore()).execute(
+        IntentResult(IntentName.OPEN_APPLICATION, 1, {"query": "Cromu"}), route="model"
+    )
+    assert response.message == "Chrome a\u00e7\u0131ld\u0131."
+    assert "Cromu" not in response.message

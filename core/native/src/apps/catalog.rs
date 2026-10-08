@@ -42,7 +42,10 @@ impl ApplicationCatalog {
             let normalized_name = normalize_application_text(application.canonical_name());
             if exclusions.contains(&normalized_name)
                 || is_forbidden_shell_name(&normalized_name)
-                || !application.launch().path().is_file()
+                || application
+                    .launch()
+                    .path()
+                    .is_some_and(|path| !path.is_file())
             {
                 continue;
             }

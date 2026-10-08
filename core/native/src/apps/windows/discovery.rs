@@ -16,6 +16,7 @@ struct DiscoveryRoot {
 
 pub struct WindowsApplicationDiscovery {
     roots: Vec<DiscoveryRoot>,
+    include_packaged: bool,
 }
 
 impl WindowsApplicationDiscovery {
@@ -46,12 +47,16 @@ impl WindowsApplicationDiscovery {
                 message: "Windows Start Menu locations are unavailable".to_owned(),
             });
         }
-        Ok(Self { roots })
+        Ok(Self {
+            roots,
+            include_packaged: true,
+        })
     }
 
     #[must_use]
     pub fn from_roots(roots: Vec<(PathBuf, ApplicationSource)>) -> Self {
         Self {
+            include_packaged: false,
             roots: roots
                 .into_iter()
                 .map(|(path, source)| DiscoveryRoot { path, source })
@@ -83,8 +88,28 @@ impl ApplicationDiscovery for WindowsApplicationDiscovery {
                 &mut visited,
             )?;
         }
+        if self.include_packaged {
+            append_packaged(&mut applications, super::packaged::discover())?;
+        }
         Ok(applications)
     }
+}
+
+fn append_packaged(
+    applications: &mut Vec<DiscoveredApplication>,
+    result: Result<Vec<DiscoveredApplication>, JarvisError>,
+) -> Result<(), JarvisError> {
+    match result {
+        Ok(packaged) => applications.extend(packaged),
+        Err(error) if !applications.is_empty() => tracing::warn!(
+            error_category = "application_discovery_failed",
+            source = "windows_apps_folder",
+            error = %error,
+            "Packaged discovery unavailable; retaining Start Menu applications"
+        ),
+        Err(error) => return Err(error),
+    }
+    Ok(())
 }
 
 fn discover_root(
@@ -187,6 +212,25 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn packaged_failure_retains_shortcuts_but_empty_discovery_fails() {
+        let root = tempdir().unwrap();
+        fs::write(root.path().join("Example.lnk"), b"shortcut").unwrap();
+        let discovery = WindowsApplicationDiscovery::from_roots(vec![(
+            root.path().to_path_buf(),
+            ApplicationSource::UserStartMenu,
+        )]);
+        let mut apps = discovery.discover().unwrap();
+        let failed = || {
+            Err(JarvisError::ApplicationDiscoveryFailed {
+                message: "test".into(),
+            })
+        };
+        append_packaged(&mut apps, failed()).unwrap();
+        assert_eq!(apps.len(), 1);
+        assert!(append_packaged(&mut Vec::new(), failed()).is_err());
+    }
 
     #[test]
     fn discovers_only_scoped_user_facing_shortcuts() {

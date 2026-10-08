@@ -276,7 +276,7 @@ The local model remains untrusted and cannot directly execute tools or operating
 See:
 
 ```text
-TASK_003.md
+agent/TASK_003.md
 ```
 
 for the complete implementation contract.
@@ -418,7 +418,7 @@ Purpose:
 
 Do not turn README into a milestone changelog.
 
-## ARCHITECTURE.md
+## agent/ARCHITECTURE.md
 
 Purpose:
 
@@ -428,11 +428,12 @@ Purpose:
 - define data/control flow
 - document architectural decisions
 
-## AGENTS.md
+## agent/AGENTS.md
 
 Purpose:
 
 - rules for coding agents
+- root AGENTS.md redirects to this canonical rules document
 - forbidden implementation shortcuts
 - security requirements
 - module ownership and boundaries
@@ -497,3 +498,22 @@ M006 Productivity
         v
 M007 Enterprise Integrations
 ```
+
+## Session context follow-up (2026-10-05)
+
+User requested session-only conversation memory. Added bounded history delivery to both local
+adapters and /reset. This implements context plumbing, not acceptance of broader conversational
+quality or M004. Scope and checks: docs/brain/SESSION_CONTEXT.md.
+
+## Interpretation quality follow-up (2026-10-06)
+
+GGUF decision prompt improved without adding tools: 12/12 exposed regression cases and 5/6
+additional diagnostic cases. Not general conversational acceptance; recall replies still require
+a contract change. Canonical Rust names now appear in app notifications. See docs/brain/REASONING_DIAGNOSTIC.md.
+
+## Conversation/task separation (2026-10-06)
+
+Added explicit modality admission before task interpretation. GGUF conversation replies return
+without execute_tool; existing task intents still use Rust. ONNX rejects unvalidated conversation
+reply generation. Legacy Fast Router cannot bypass execution admission. No new machine tools or
+voice work. Scope, validation and interpreter recovery: docs/brain/REQUEST_ROUTING.md.

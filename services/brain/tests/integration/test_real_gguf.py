@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from jarvis_brain.intelligence.contract import IntentContext, IntentName
+from jarvis_brain.intelligence.contract import ConversationTurn, IntentContext, IntentName
 from jarvis_brain.intelligence.models.qwen_gguf import QwenGgufIntentModel
 
 pytestmark = [
@@ -22,5 +22,15 @@ def test_real_local_non_thinking_intents():
         assert result.arguments["query"].casefold() in {"chrome", "google chrome"}
         result = model.predict("How is my computer doing?", IntentContext())
         assert result.intent is IntentName.SYSTEM_STATUS
+        context = IntentContext(
+            history=(
+                ConversationTurn(
+                    "I want to use Google Chrome", "Do you want me to open Google Chrome?"
+                ),
+            )
+        )
+        result = model.predict("Yes, open that application.", context)
+        assert result.intent is IntentName.OPEN_APPLICATION
+        assert result.arguments["query"].casefold() in {"chrome", "google chrome"}
     finally:
         model.unload()

@@ -30,6 +30,12 @@ class SelectionSession:
         self._candidates: tuple[Candidate, ...] = ()
         self._expires = 0.0
 
+    def pending_candidates(self) -> tuple[Candidate, ...]:
+        """Trusted evidence for this request only; never include IDs in a model prompt."""
+        if self._clock() >= self._expires:
+            self.clear()
+        return self._candidates
+
     def clear(self) -> None:
         self._candidates = ()
 

@@ -4,7 +4,7 @@ mod registry;
 pub mod system;
 mod tool;
 
-pub use apps::{OpenAppTool, ResolveAppTool};
+pub use apps::{OpenAppTool, RefreshAppCatalogTool, ResolveAppTool};
 pub use files::OpenFolderTool;
 pub use registry::ToolRegistry;
 pub use system::SystemStatusTool;

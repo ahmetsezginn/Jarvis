@@ -97,8 +97,13 @@ Initial target monorepo:
 jarvis/
 |
 ├── README.md
-├── AGENTS.md
-├── ARCHITECTURE.md
+├── AGENTS.md               # Automatic agent entry point
+├── agent/
+│   ├── AGENTS.md           # Canonical engineering rules
+│   ├── ARCHITECTURE.md
+│   ├── README.md           # Document index
+│   ├── STATE.md            # Handoff notes
+│   └── TASK_*.md           # Milestone specs and follow-up tasks
 |
 ├── apps/
 │   ├── desktop/
@@ -864,3 +869,57 @@ Brain may eventually retain bounded safe Core-provided candidate metadata as adv
 the authoritative catalog, current resolution, policy and launch targets remain inside Rust.
 
 > AI thinks. JARVIS Core decides. The computer acts.
+
+### Session conversation context (2026-10-05)
+
+User-authorized session-only memory now passes bounded conversation pairs through IntentContext
+to both local adapters. See docs/brain/SESSION_CONTEXT.md. Six pairs / 2400 characters; no disk
+persistence, IDs or raw Core payloads. History is untrusted advisory data and never grants
+permission. /reset clears history and pending selection. Contextual turns bypass legacy Fast
+Router; strict validation and Rust execution authority remain unchanged.
+
+### Request interpretation refinement (2026-10-06)
+
+The GGUF adapter uses a provider-specific decision prompt for capability checks, negation,
+corrections and app/folder distinctions. ONNX keeps its compact historical prompt after a
+shared-prompt regression. Both retain the same strict four-intent contract. No new machine
+capabilities or ordinary conversation intent were added. Evidence: docs/brain/REASONING_DIAGNOSTIC.md.
+
+### Conversation/task admission (2026-10-06)
+
+The user explicitly requested independent conversation and task paths. Every new executable
+request in handle_text first passes a typed, read-only modality classifier. Conversation returns
+a bounded text reply without task prediction or tool dispatch. Task output retains the existing
+four-intent contract and all Rust authority checks. BrainResponse.respond is a response event,
+not a Core or task intent. Legacy fast routing no longer shortcuts execution. GGUF supports
+conversation replies; ONNX refuses unvalidated conversation generation with a typed error.
+See docs/brain/REQUEST_ROUTING.md for contracts, limits and validation.
+
+### Windows packaged application discovery (2026-10-08)
+
+Rust now merges scoped Start Menu shortcuts with packaged applications enumerated through
+native Windows AppsFolder Shell/COM interfaces. Only validated package-family/application
+identities are accepted from this platform metadata. Packaged launch targets have no filesystem
+path; IApplicationActivationManager activates the catalog-owned AUMID after unchanged tool
+validation and policy. Brain still supplies only a human query to resolve_app and a returned
+trusted app_id to open_app. AUMIDs and launch targets are not exposed through IPC.
+The Windows-only windows crate provides typed COM bindings; windows-sys retains transport APIs.
+Discovery is bounded by 10,000 Shell items and an elapsed-time check between COM calls (not
+a hard timeout on an individual Windows API call; elapsed limit is 60 seconds). If AppsFolder fails, a structured warning
+records degraded discovery while existing shortcuts remain available; empty failed discovery
+still returns a typed error. Tests can disable live enumeration through from_roots, with a
+separate opt-in live test. See docs/brain/WINDOWS_PACKAGED_APPS.md for validation and limitations.
+
+### Explicit application catalog refresh (2026-10-08)
+
+refresh_app_catalog({}) is a read-only registered Rust tool. It validates an empty object and
+passes through the same policy, executor and audit pipeline; catalog replacement is atomic and
+failed discovery retains the previous catalog. Refresh changes internal metadata only.
+Brain supports narrow deterministic session follow-ups, separate from model task decoding:
+an explicit catalog-refresh command, or an affirmative newly-installed statement immediately
+after a real application_not_found result. One validated human query is retained for 120 seconds,
+without IDs or raw Core data, and consumed on any subsequent turn. /reset and cancellation clear
+it. Recovery refreshes once, re-resolves the query, then continues the original user-authorized
+opening request through policy; ambiguity still requires selection. No retry loop or post-launch
+verification is added. The model's four-intent contract and conversation isolation are unchanged.
+See docs/brain/CATALOG_REFRESH.md for accepted phrases, tests and limitations.

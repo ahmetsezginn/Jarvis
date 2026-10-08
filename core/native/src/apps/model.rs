@@ -48,6 +48,7 @@ impl std::fmt::Display for ApplicationId {
 pub enum ApplicationSource {
     UserStartMenu,
     MachineStartMenu,
+    WindowsAppsFolder,
     AdministrativeOverride,
 }
 
@@ -56,6 +57,7 @@ impl ApplicationSource {
         match self {
             Self::UserStartMenu => "user_start_menu",
             Self::MachineStartMenu => "machine_start_menu",
+            Self::WindowsAppsFolder => "windows_apps_folder",
             Self::AdministrativeOverride => "administrative_override",
         }
     }
@@ -63,6 +65,9 @@ impl ApplicationSource {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrustedLaunchTarget {
+    PackagedApplication {
+        aumid: String,
+    },
     Shortcut(PathBuf),
     Executable {
         path: PathBuf,
@@ -72,14 +77,16 @@ pub enum TrustedLaunchTarget {
 
 impl TrustedLaunchTarget {
     #[must_use]
-    pub fn path(&self) -> &Path {
+    pub fn path(&self) -> Option<&Path> {
         match self {
-            Self::Shortcut(path) | Self::Executable { path, .. } => path,
+            Self::Shortcut(path) | Self::Executable { path, .. } => Some(path),
+            Self::PackagedApplication { .. } => None,
         }
     }
 
     pub(crate) fn deterministic_key(&self) -> String {
         match self {
+            Self::PackagedApplication { aumid } => format!("packaged:{aumid}"),
             Self::Shortcut(path) => format!("shortcut:{}", path.display()),
             Self::Executable { path, arguments } => {
                 format!("executable:{}\0{}", path.display(), arguments.join("\0"))
@@ -113,9 +120,16 @@ impl DiscoveredApplication {
                 message: "discovered application name must not be empty".to_owned(),
             });
         }
-        if !launch.path().is_absolute() {
+        if launch.path().is_some_and(|path| !path.is_absolute()) {
             return Err(JarvisError::ApplicationDiscoveryFailed {
                 message: format!("launch target for '{canonical_name}' must be absolute"),
+            });
+        }
+        if let TrustedLaunchTarget::PackagedApplication { aumid } = &launch
+            && (source != ApplicationSource::WindowsAppsFolder || !valid_packaged_aumid(aumid))
+        {
+            return Err(JarvisError::ApplicationDiscoveryFailed {
+                message: "invalid packaged application identity or source".to_owned(),
             });
         }
 
@@ -185,6 +199,53 @@ impl DiscoveredApplication {
             self.source.stable_key(),
             self.launch.deterministic_key()
         )
+    }
+}
+
+pub(crate) fn valid_packaged_aumid(value: &str) -> bool {
+    let Some((family, app)) = value.split_once('!') else {
+        return false;
+    };
+    value.len() <= 512
+        && !family.is_empty()
+        && !app.is_empty()
+        && family.contains('_')
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-!".contains(&byte))
+        && !app.contains('!')
+}
+
+#[cfg(test)]
+mod packaged_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_paths_commands_and_wrong_source() {
+        for identity in [
+            "",
+            "calc.exe",
+            "C:\\app.exe",
+            "Vendor_hash!App;cmd",
+            "Vendor_hash!App!Other",
+            "Vendor_hash!",
+        ] {
+            assert!(!valid_packaged_aumid(identity));
+        }
+        assert!(valid_packaged_aumid("Vendor.Product_hash!App"));
+        assert!(
+            DiscoveredApplication::new(
+                ApplicationSource::AdministrativeOverride,
+                "identity",
+                "App",
+                vec![],
+                None,
+                TrustedLaunchTarget::PackagedApplication {
+                    aumid: "Vendor_hash!App".into()
+                },
+            )
+            .is_err()
+        );
     }
 }
 

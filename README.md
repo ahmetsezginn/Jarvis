@@ -44,12 +44,14 @@ JARVIS uses different languages for clearly separated responsibilities:
 
 The Python service cannot launch applications or perform privileged OS operations directly. Machine actions are sent to the Rust core through the local control protocol.
 
-More detail is available in [ARCHITECTURE.md](ARCHITECTURE.md).
+More detail is available in [agent/ARCHITECTURE.md](agent/ARCHITECTURE.md).
+Engineering rules, tasks and session context are indexed in [agent/README.md](agent/README.md).
 
 ## Current Features
 
-- Dynamic discovery of Windows Start Menu applications
+- Dynamic discovery of Windows Start Menu shortcuts and packaged applications from Windows AppsFolder
 - Trusted in-memory application catalog
+- Explicit catalog refresh without restarting Core; after a missing app, “ben daha yeni yükledim” refreshes and retries that request
 - Deterministic application resolution
 - Policy-controlled application launching
 - Folder opening through a registered tool
@@ -76,7 +78,8 @@ jarvis/
 │   └── brain/               # Python brain service
 ├── config/
 │   └── preferences.example.toml
-├── ARCHITECTURE.md
+├── AGENTS.md                # Agent entry point
+├── agent/                   # Rules, architecture, tasks and session context
 ├── Cargo.toml
 └── README.md
 ```
@@ -206,3 +209,10 @@ Run the Python checks from `services\brain`:
 ## Status
 
 JARVIS currently provides the secure native execution foundation and the local Python-to-Rust control bridge. Voice input, desktop UI, external AI providers, and broader tool coverage can be added without bypassing the same native policy boundary.
+
+Interactive JARVIS responses now appear as readable messages. Add `--json` to the Brain
+`ask` or `repl` command for structured diagnostics; see [Brain CLI](services/brain/README.md).
+
+GGUF interactive sessions now separate ordinary conversation from controlled machine tasks.
+Conversation replies do not dispatch tools; machine tasks retain Rust validation and policy.
+See [conversation/task routing](docs/brain/REQUEST_ROUTING.md) for details.

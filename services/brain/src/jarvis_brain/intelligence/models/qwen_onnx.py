@@ -23,6 +23,12 @@ from jarvis_brain.intelligence.contract import IntentContext, IntentResult
 from jarvis_brain.intelligence.models.base import ModelState
 from jarvis_brain.intelligence.parser import parse_model_output
 from jarvis_brain.intelligence.prompts import INTENT_JSON_SCHEMA, build_non_thinking_prompt
+from jarvis_brain.intelligence.request_routing import (
+    ROUTE_PROMPT,
+    ROUTE_SCHEMA,
+    RequestRoute,
+    parse_route,
+)
 
 
 @dataclass(frozen=True)
@@ -93,9 +99,27 @@ class QwenOnnxIntentModel:
             gc.collect()
 
     def predict(self, text: str, context: IntentContext) -> IntentResult:
+        return self._generate(
+            build_non_thinking_prompt(text, context),
+            context,
+            INTENT_JSON_SCHEMA,
+            parse_model_output,
+        )
+
+    def classify_request(self, text: str, context: IntentContext) -> RequestRoute:
+        prompt = build_non_thinking_prompt(text, context, system_prompt=ROUTE_PROMPT)
+        return self._generate(prompt, context, ROUTE_SCHEMA, parse_route)
+
+    def respond(self, text: str, context: IntentContext) -> str:
+        raise ModelInferenceError(
+            "Conversation replies are not validated for the ONNX provider; use the GGUF provider."
+        )
+
+    def _generate(
+        self, prompt: str, context: IntentContext, output_schema: dict, parser: Any
+    ) -> Any:
         if self._state is not ModelState.READY:
             raise ModelInferenceError("Qwen model must be loaded before prediction")
-        prompt = build_non_thinking_prompt(text)
         try:
             input_tokens = self._tokenizer.encode(prompt)
             prompt_tokens = len(input_tokens)
@@ -110,13 +134,22 @@ class QwenOnnxIntentModel:
                 min_length=prompt_tokens + 24,
                 max_length=prompt_tokens + context.max_generated_tokens,
             )
-            schema = json.dumps(INTENT_JSON_SCHEMA, separators=(",", ":"))
+            schema = json.dumps(output_schema, separators=(",", ":"))
             parameters.set_guidance("lark_grammar", f"start: %json {schema}\n")
             generator = self._runtime.Generator(self._model, parameters)
             generator.append_tokens(input_tokens)
             started = time.perf_counter()
             while not generator.is_done():
                 generator.generate_next_token()
+                # Stop generation at a whole validated object, not by trimming a finished output.
+                partial = self._tokenizer.decode(generator.get_sequence(0)[prompt_tokens:]).strip()
+                if partial.endswith("}"):
+                    try:
+                        parser(partial)
+                    except ModelOutputInvalid:
+                        pass  # Incomplete or invalid data never qualifies as a stop boundary.
+                    else:
+                        break
             sequence = generator.get_sequence(0)
             generated = sequence[prompt_tokens:]
             raw_output = self._tokenizer.decode(generated).strip()
@@ -142,7 +175,7 @@ class QwenOnnxIntentModel:
                 generated_tokens=len(generated),
                 inference_ms=elapsed_ms,
             )
-            return parse_model_output(raw_output)
+            return parser(raw_output)
         except (ModelInferenceError, ModelOutputInvalid):
             raise
         except Exception as error:

@@ -55,6 +55,9 @@ class IntentOrchestrator:
             expected_app_id=app_id,
         )
 
+    def refresh_catalog(self) -> None:
+        self._core.execute_tool("refresh_app_catalog", {})
+
     def _open_application(
         self, result: IntentResult, route: str, *, expected_app_id: str | None = None
     ) -> BrainResponse:
@@ -93,12 +96,17 @@ class IntentOrchestrator:
                     data=error.details,
                 )
             raise
+        display_name = query
+        if isinstance(tool_result.data, dict):
+            name = tool_result.data.get("name")
+            if isinstance(name, str) and 0 < len(name) <= 256:
+                display_name = " ".join(name.split()) or query
         return BrainResponse(
             intent=result.intent,
             confidence=result.confidence,
             route=route,
             executed=True,
-            message=f"Uygulama Rust kataloğu üzerinden açıldı: {query}",
+            message=f"{display_name} açıldı.",
             data=asdict(tool_result),
         )
 

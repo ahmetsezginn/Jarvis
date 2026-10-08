@@ -31,7 +31,7 @@ def test_repl_reuses_model_and_recovers_from_bad_input(monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", lambda _prompt: next(inputs))
     monkeypatch.setattr(cli, "create_intent_model", lambda: model)
     monkeypatch.setattr(cli, "JarvisCoreClient", Core)
-    assert cli.run(["repl"]) == 0
+    assert cli.run(["repl", "--json"]) == 0
     assert model.load_count == 1
     assert model.predict_count == 2
     assert '"intent_validation_failed"' in capsys.readouterr().out
@@ -54,5 +54,21 @@ def test_repl_reports_transport_errors_without_code_attribute(monkeypatch, capsy
     monkeypatch.setattr("builtins.input", lambda _prompt: next(inputs))
     monkeypatch.setattr(cli, "create_intent_model", lambda: model)
     monkeypatch.setattr(cli, "JarvisCoreClient", Core)
-    assert cli.run(["repl"]) == 0
+    assert cli.run(["repl", "--json"]) == 0
     assert '"TransportError"' in capsys.readouterr().out
+
+
+def test_readable_response_hides_diagnostics_and_json_remains_available(capsys):
+    import json
+
+    from jarvis_brain.intelligence.contract import BrainResponse
+
+    response = BrainResponse(
+        IntentName.OPEN_APPLICATION, 1, "model", True, "Chrome opened.", {"app_id": "private-id"}
+    )
+    cli._print_response(response, json_output=False)
+    assert capsys.readouterr().out == "JARVIS: Chrome opened.\n"
+    cli._print_response(response, json_output=True)
+    structured = json.loads(capsys.readouterr().out)
+    assert structured["executed"] is True
+    assert structured["data"]["app_id"] == "private-id"
