@@ -1,0 +1,9 @@
+# Optional local Core configuration. Set JARVIS_FILES_CONFIG to your own TOML file.
+# Replaces default scope; never supplied by the model. Restart Core after changing roots.
+[[roots]]
+name = "Documents"
+path = 'C:\Users\YOUR_USER\Documents'
+
+[[roots]]
+name = "Archive"
+path = 'D:\Archive'

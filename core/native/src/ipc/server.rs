@@ -402,10 +402,18 @@ mod tests {
         assert_eq!(
             names,
             [
+                "file_catalog_status",
+                "list_directory",
                 "open_app",
+                "open_containing_folder",
+                "open_directory",
+                "open_file",
+                "open_file_with_app",
                 "open_folder",
                 "refresh_app_catalog",
+                "refresh_file_catalog",
                 "resolve_app",
+                "search_files",
                 "system_status"
             ]
         );

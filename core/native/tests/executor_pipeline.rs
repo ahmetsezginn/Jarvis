@@ -518,7 +518,7 @@ fn policy_denial_prevents_catalog_backed_application_launch() {
 }
 
 #[test]
-fn production_registry_contains_only_task_001_tools() {
+fn production_registry_contains_registered_application_and_file_tools() {
     let executor = jarvis_core::build_executor(
         Arc::new(FakeDesktopPlatform::default()),
         catalog(Vec::new()),
@@ -531,16 +531,29 @@ fn production_registry_contains_only_task_001_tools() {
     assert_eq!(
         names,
         [
+            "file_catalog_status",
+            "list_directory",
             "open_app",
+            "open_containing_folder",
+            "open_directory",
+            "open_file",
+            "open_file_with_app",
             "open_folder",
             "refresh_app_catalog",
+            "refresh_file_catalog",
             "resolve_app",
+            "search_files",
             "system_status"
         ]
     );
-    assert_eq!(metadata[0].risk_level, RiskLevel::Low);
-    assert_eq!(metadata[1].risk_level, RiskLevel::Low);
-    assert_eq!(metadata[2].risk_level, RiskLevel::ReadOnly);
-    assert_eq!(metadata[3].risk_level, RiskLevel::ReadOnly);
-    assert_eq!(metadata[4].risk_level, RiskLevel::ReadOnly);
+    for tool in &metadata {
+        assert_eq!(
+            tool.risk_level,
+            if tool.name.starts_with("open_") {
+                RiskLevel::Low
+            } else {
+                RiskLevel::ReadOnly
+            }
+        );
+    }
 }

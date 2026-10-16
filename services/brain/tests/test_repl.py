@@ -1,11 +1,35 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from jarvis_brain import cli
 from jarvis_brain.errors import TransportError
-from jarvis_brain.intelligence.contract import IntentName, IntentResult
-from jarvis_brain.intelligence.models.fake import FakeIntentModel
+from jarvis_brain.intelligence.contract import IntentName
+
+
+class ReplModel:
+    def __init__(self, action):
+        self.action = action
+        self.load_count = self.step_count = 0
+        self.loaded = False
+
+    def load(self):
+        if not self.loaded:
+            self.load_count += 1
+            self.loaded = True
+
+    def unload(self):
+        self.loaded = False
+
+    def next_step(self, *args):
+        self.step_count += 1
+        arguments = {"message": "Merhaba."} if self.action == "answer" else {}
+        return json.dumps({"action": self.action, "arguments": arguments, "confidence": 1})
+
+    def authorize_action(self, *args):
+        return False
 
 
 @pytest.mark.parametrize("command", [["ask", "hello"], ["predict", "hello"], ["repl"]])
@@ -15,7 +39,7 @@ def test_cli_router_is_opt_in(command):
 
 
 def test_repl_reuses_model_and_recovers_from_bad_input(monkeypatch, capsys):
-    model = FakeIntentModel(IntentResult(IntentName.UNSUPPORTED, 1, {}))
+    model = ReplModel("answer")
 
     class Core:
         def __enter__(self):
@@ -29,16 +53,16 @@ def test_repl_reuses_model_and_recovers_from_bad_input(monkeypatch, capsys):
 
     inputs = iter(["a\x00b", "a non-action", "another non-action", "exit"])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(inputs))
-    monkeypatch.setattr(cli, "create_intent_model", lambda: model)
+    monkeypatch.setattr(cli, "create_agent_model", lambda: model)
     monkeypatch.setattr(cli, "JarvisCoreClient", Core)
     assert cli.run(["repl", "--json"]) == 0
     assert model.load_count == 1
-    assert model.predict_count == 2
+    assert model.step_count == 2
     assert '"intent_validation_failed"' in capsys.readouterr().out
 
 
 def test_repl_reports_transport_errors_without_code_attribute(monkeypatch, capsys):
-    model = FakeIntentModel(IntentResult(IntentName.SYSTEM_STATUS, 1, {}))
+    model = ReplModel("system_status")
 
     class Core:
         def __enter__(self):
@@ -52,7 +76,7 @@ def test_repl_reports_transport_errors_without_code_attribute(monkeypatch, capsy
 
     inputs = iter(["system status", "exit"])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(inputs))
-    monkeypatch.setattr(cli, "create_intent_model", lambda: model)
+    monkeypatch.setattr(cli, "create_agent_model", lambda: model)
     monkeypatch.setattr(cli, "JarvisCoreClient", Core)
     assert cli.run(["repl", "--json"]) == 0
     assert '"TransportError"' in capsys.readouterr().out

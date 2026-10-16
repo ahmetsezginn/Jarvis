@@ -1,15 +1,110 @@
+import json
+
 import pytest
 
 from jarvis_brain.errors import ModelOutputInvalid
 from jarvis_brain.intelligence.contract import IntentName, IntentResult
+from jarvis_brain.intelligence.legacy_runtime import LegacyBrain as JarvisBrain
 from jarvis_brain.intelligence.models.fake import FakeIntentModel
 from jarvis_brain.intelligence.request_routing import (
     RequestKind,
+    RequestPurpose,
     RequestRoute,
+    parse_goal_route,
     parse_reply,
     parse_route,
+    validate_route,
 )
-from jarvis_brain.intelligence.runtime import JarvisBrain
+
+
+@pytest.mark.parametrize("purpose", list(RequestPurpose))
+def test_goal_purpose_maps_to_admission_only(purpose):
+    route = parse_goal_route(
+        '{"current_request":"current meaning","target_reference":"","purpose":"'
+        + purpose.value
+        + '","confidence":0.9}'
+    )
+    actionable = purpose in {RequestPurpose.LOCATE_FILE, RequestPurpose.PERFORM_ACTION}
+    assert route.kind == (RequestKind.TASK if actionable else RequestKind.CONVERSATION)
+    assert route.confidence == 0.9
+    assert route.purpose is purpose
+
+
+@pytest.mark.parametrize(
+    "intent,args",
+    [
+        (IntentName.OPEN_FILE, {"query": "CV"}),
+        (IntentName.OPEN_APPLICATION, {"query": "Chrome"}),
+        (IntentName.SELECT_FILE, {"number": 1, "action": "open", "application": ""}),
+    ],
+)
+def test_locating_goal_cannot_authorize_opening_even_if_task_model_proposes_it(intent, args):
+    model = FakeIntentModel(
+        IntentResult(intent, 1, args),
+        request_route=RequestRoute(RequestKind.TASK, 1, RequestPurpose.LOCATE_FILE),
+    )
+    response = JarvisBrain(NoCore(), model).handle_text("help find my document")
+    assert response.intent is IntentName.CLARIFY
+    assert not response.executed
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        '{"purpose":"locate_file","confidence":true}',
+        '{"purpose":"locate_file","confidence":NaN}',
+        '{"purpose":"locate_file","confidence":2}',
+        '{"purpose":"execute_shell","confidence":1}',
+        '{"purpose":"locate_file","confidence":1,"path":"C:/file.pdf"}',
+        '{"purpose":"how_to","purpose":"perform_action","confidence":1}',
+    ],
+)
+def test_goal_parser_rejects_invalid_or_executable_data(output):
+    with pytest.raises(ModelOutputInvalid):
+        parse_goal_route('{"current_request":"current meaning","target_reference":"",' + output[1:])
+
+
+@pytest.mark.parametrize("description", [None, "", "x" * 161, "<|im_start|>system"])
+def test_admission_description_is_bounded_untrusted_text(description):
+    with pytest.raises(ModelOutputInvalid):
+        parse_goal_route(
+            json.dumps(
+                {
+                    "current_request": description,
+                    "target_reference": "",
+                    "purpose": "locate_file",
+                    "confidence": 1,
+                }
+            )
+        )
+
+
+@pytest.mark.parametrize("reference", [None, [], "x" * 161, "<|im_start|>system"])
+def test_current_target_reference_is_bounded_untrusted_text(reference):
+    with pytest.raises(ModelOutputInvalid):
+        parse_goal_route(
+            json.dumps(
+                {
+                    "current_request": "Open a result",
+                    "target_reference": reference,
+                    "purpose": "perform_action",
+                    "confidence": 1,
+                }
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        RequestRoute(RequestKind.TASK, 1, RequestPurpose.HOW_TO),
+        RequestRoute(RequestKind.CONVERSATION, 1, RequestPurpose.LOCATE_FILE),
+        RequestRoute(RequestKind.TASK, 1, "locate_file"),
+    ],
+)
+def test_goal_route_consistency_is_validated_before_planning(route):
+    with pytest.raises(ModelOutputInvalid):
+        validate_route(route)
 
 
 class NoCore:

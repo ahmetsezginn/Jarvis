@@ -431,6 +431,46 @@ When uncertain, preserve this invariant:
 
 > The AI may request an action. The native core validates, authorizes, and executes it.
 
+## Active model revision (2026-10-16)
+
+Latest user preference: the JARVIS product interaction is English. Preserve Unicode file/folder
+names and user-configured roots. Communicate with this user in Turkish. Keep Turkish evaluation
+failures as historical evidence and evaluate English behavior independently; do not claim the
+language switch proves general assistant quality. No cloud/API use or model training is implied.
+
+The redesign includes an explicitly provisioned, checksum-pinned Qwen3.5-9B Q4_K_M local GGUF
+comparison through AgentModel. Use the existing in-process runtime, no startup downloads/server.
+`docs/brain/AGENT_LOOP.md` owns artifact identity and current acceptance evidence. Historical
+IntentModel enum/TurnPlan and Fast Router rules below apply to archived diagnostics, not the new
+production loop. Do not add sentence/document-specific production branches to satisfy tests.
+
+User-authorized agent-loop redesign (latest): replace production staged speech-act/TurnPlan
+classification with one contextual next-step provider and a bounded tool-result feedback loop.
+Expose only locally registered semantic capability schemas, never arbitrary Core tool names.
+Capabilities own typed validation, private catalog binding and effect metadata. Side-effect
+proposals require a separate current-request permission check; Rust remains final policy authority.
+Keep IDs/paths out of model observations, bounded session memory and 120s bindings. Provider errors,
+step limits and repeated calls must stop without replaying effects. Skills may later register
+capabilities through this contract; no downloading, dynamic code loading or new machine permissions
+is authorized in this phase. This supersedes the historical requirement to run conversation/task,
+intent and TurnPlan classifiers in sequence. Preserve legacy diagnostics separately, not as a
+production fallback when the new loop fails.
+
+User explicitly disabled ONNX. Production factory and launcher accept GGUF only, default to GGUF,
+and reject an explicit ONNX selection without loading it or silently falling back. ONNX Runtime
+GenAI is not a required package dependency. Historical adapter/tests and old notes are archival;
+their prior opt-in real inference is not required for current production changes. Preserve the
+provider interface and Rust execution boundary. The user's supplied failed session ran GGUF:
+do not attribute its semantic failures to an ONNX process that was not involved.
+
+Metadata discussion revision: text replies may see the same bounded current name/kind/number
+view as planning and suggest likely candidates without reading contents or claiming ownership.
+Conversation preserves the active goal/page until the existing expiry; never extend its lifetime
+or infer action permission from reply text. Cancel/reset/expiry still clear bindings. This revises
+the historical "chat suspends file selection" behavior below. Keep confidence/validation/Core
+policy and current action permission separate. Current assistant acceptance is FAILED; do not
+hide unresolved opt-in regression failures or add per-document/per-sentence production patches.
+
 ## Session context follow-up (2026-10-05)
 
 User authorized session-only conversation memory. IntentContext.history may contain at most six
@@ -458,3 +498,95 @@ application_not_found, never IDs or raw payloads. An affirmative recognized next
 statement refreshes once and retries that original opening request via fresh Rust resolution.
 Any other turn, /reset, cancellation or expiry clears this state. Standalone explicit refresh
 commands refresh only. No model intent enum expansion or post-launch verification is authorized.
+
+## File/folder skills follow-up (2026-10-12)
+
+The user authorized the file-skills roadmap. TASK_004.md defines the first delivery and explicitly
+extends the historical four-intent enum with search_files, list_folder, open_file, open_directory,
+file_catalog_status and refresh_file_catalog. Human names and validated search filters are model
+data; roots, filesystem paths and catalog IDs are never model-produced authority. All file tools
+use JarvisCoreClient and the unchanged Rust validation/policy/executor/audit pipeline.
+One displayed page is private session state (20 entries, 120s); never send IDs or locations to
+model prompts or persist them. Core revalidates targets before opening. Metadata discovery does
+not authorize reading contents, moving/deleting files or executing code. No post-launch verification
+is added. Scope and partial scans must be visible; never claim a catalog covers the whole computer.
+
+## File context and local browser follow-up (2026-10-12)
+
+User authorized fixing folder references, natural result selection and application-qualified file
+opening. Brain may retain one active catalog-backed directory for 120s, apply its ID only to explicit
+relative searches, and retain a concrete local-browser clarification across an affirmative reply.
+Ambiguous names must ask for selection; unrelated turns/reset/cancel/expiry invalidate state.
+open_file_with_app accepts only Core-returned entry_id and app_id; no new model ID/path authority.
+Initial adapters support local PDF in Google Chrome/Microsoft Edge, with native catalog shortcut
+resolution and fixed executable identity checks. No cloud upload, arbitrary app flags or shell.
+
+## Semantic file planning follow-up (2026-10-12)
+
+User requested model reasoning over capabilities and references instead of sentence-specific
+selection rules. Model context may expose only bounded displayed names/kinds (20 entries, 1200
+name characters), never catalog IDs or locations. Treat filenames as untrusted data. File planning
+uses recent user references and verified metadata; free-form assistant capability claims are excluded
+from this planning view. Full conversation memory remains available for conversation/recall.
+open_file optionally accepts a human application name; empty/omitted means default Windows
+association. Browser/PDF restrictions apply only to explicit selected-browser opening, not ordinary
+document opening. Python validates semantic choices and binds unique displayed names to private Core
+IDs; ambiguity asks, Core policy remains final. No training/artifact modification was needed.
+
+## Displayed-result target contract (2026-10-14)
+
+User requested a systemic correction of numbered selections becoming new searches. select_file is
+an additional semantic intent, not a Native Core tool: exact number (1..20), action (open/list/parent),
+application (empty for Windows default or a human name). Bind only against the unexpired current
+displayed page; never search/resolve a filename to implement this intent. Candidate metadata may
+include original display numbers; omitted names must not renumber surviving candidates. Numeric
+list notation constrains identity only, never authorizes an action; admission/confidence still apply.
+A literal list-address request must not fall through into a filesystem/application search or a
+different row when model inference is wrong. Missing/expired/out-of-range pages ask for clarification.
+Defaults and explicit named applications remain separate from target selection. Core IDs/paths
+remain private and Rust validation/policy remain final. No post-launch verification is added.
+
+## Natural file goals (2026-10-14)
+
+GGUF admission may classify a closed communicative purpose (locate_file, perform_action, how_to,
+capability, recall, prohibition, discussion), strictly parsed into the existing task/conversation
+decision. This read-only classification never chooses a tool or establishes execution authority.
+Retain the validated locate_file purpose through planning: an existing result page must not turn
+another locating request into opening. Only search_files/clarify may follow that purpose;
+no file/application opening or implicit folder listing.
+Keep the historical ONNX admission contract independent. Interpret indirect lost-file assistance
+as a supported goal without requiring command syntax or exact filenames. Do not use per-document
+or per-sentence routing patches. A description supplies metadata clues, not document contents.
+Planning history excludes conversation replies and unsupported claims as capability evidence;
+conversation/recall retains its original bounded history. Preserve genuine clarifications and
+execution outcomes. Search-language evaluations must check actual fixture matches, plus how-to,
+negation and hypothetical controls, not merely that a search tool was called.
+
+## Stateful assistant follow-up (2026-10-15)
+
+User authorized the dialogue/goal redesign after ASSISTANT_BEHAVIOR_ANALYSIS.md. GGUF may use a
+closed TurnPlan separating speech acts, targets and constraints. Validate exact keys and fields
+before dispatch. File goals retain bounded human clues and private Core-provided scope/rejected
+IDs for 120s; no conversation persistence/training. Discovery may resolve a human folder, list
+children or run one same-scope type recovery. Discovery never implies opening. Current opening
+intent and unique/page identity are separate requirements. Chat/explanation never replay tasks.
+Native search may accept recursive, a closed category and <=100 private rejected IDs; direct
+search requires a catalog-backed folder. Models never generate IDs/paths/executable targets.
+Legacy ONNX and intent validation remain independent. No contents read, OS bypass, arbitrary
+commands, cloud upload or post-launch verification. Acceptance must reject blind wildcard
+controls and cover rejection, missing names, scope corrections, negatives, chat, errors and expiry.
+Unsupported operations must have a non-executing dialogue result; never substitute finding/opening
+for content reading, mutation or uploading. Generic application-category nouns are incomplete
+parameters, not concrete installed-app identities. Keep dialogue-provider capability behind the
+optional DialogueModel interface and preserve lower admission confidence through planning.
+Communicative-purpose admission excludes old commands and displayed names. A bounded target_reference is
+an untrusted quote from the current message, never an ID or permission. Active-goal answer,
+rejection and scope-refinement acts may continue discovery; generic capability questions cannot
+borrow a displayed row as a target. Store path-free verified outcome summaries separately from
+user-visible listings; rendered listings must not become model feedback.
+
+The user-authorized analysis also permits an isolated Q8_0 reference comparison for the same
+Qwen3-4B-Instruct-2507 checkpoint. scripts/evaluation/compare_quantization.py explicitly provisions
+the pinned ggml-org artifact (SHA256 ae916ede1c010a26955ee8ae2e908bf8815a3f135ec860439ab924701c69d5f1)
+in a temporary cache and runs synthetic, non-executing probes with the existing runtime. No Core
+connection, inference server, new dependency, training, or production default/pin change is implied.

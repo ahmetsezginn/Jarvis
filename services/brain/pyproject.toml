@@ -8,9 +8,7 @@ version = "0.2.0"
 description = "Local intent runtime and client for the trusted JARVIS Rust Core"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "onnxruntime-genai==0.15.2",
-]
+dependencies = []
 
 [project.optional-dependencies]
 dev = [
@@ -27,9 +25,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "-q -p no:cacheprovider"
 testpaths = ["tests"]
-markers = [
-    "integration: requires the provisioned real ONNX model artifact",
-]
+markers = ["integration: explicitly enabled local model or Core integration"]
 
 [tool.ruff]
 line-length = 100

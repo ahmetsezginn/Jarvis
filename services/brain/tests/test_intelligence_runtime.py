@@ -6,8 +6,8 @@ import pytest
 
 from jarvis_brain.errors import IntentValidationError
 from jarvis_brain.intelligence.contract import IntentName, IntentResult
+from jarvis_brain.intelligence.legacy_runtime import LegacyBrain as JarvisBrain
 from jarvis_brain.intelligence.models.fake import FakeIntentModel
-from jarvis_brain.intelligence.runtime import JarvisBrain
 from jarvis_brain.ipc.protocol import ToolResult
 
 

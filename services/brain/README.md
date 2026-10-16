@@ -1,8 +1,85 @@
 # JARVIS Brain
 
+## Current runtime: capability agent (2026-10-16)
+
+`ask`/`repl` now use a bounded model/tool-result loop through `AgentModel` and
+`CapabilityRegistry`. They do not run the archived intent/TurnPlan classifier chain.
+New trusted capabilities register schema, handler, effect metadata, Core dependencies and
+optional context/reset/reference hooks; no intent enum or loop edit is needed. Rust still
+validates and authorizes every machine operation. See [the current design and measured
+acceptance](../../docs/brain/AGENT_LOOP.md).
+
+The active interaction language is **English**. File/folder names remain in their original
+language; the language change does not rename files, remove Unicode support or change policy.
+Example: “I saved a presentation somewhere and can't find it”, “Open the second one, please”,
+or “Open it with Microsoft Edge”. Ordinary opening uses Windows' default file association.
+English behavioral acceptance and the earlier Turkish failures are reported separately.
+
+Default local profile: **Qwen3.5-9B Q4_K_M**, in-process with the existing pinned
+`llama-cpp-python==0.3.35`. Explicit setup from repository root:
+
+```powershell
+py -3.12 -m venv .\services\brain\.venv
+.\services\brain\.venv\Scripts\python.exe -m pip install -e ".\services\brain[dev]"
+.\services\brain\.venv\Scripts\python.exe -m pip install -r scripts/models/requirements-gguf-cuda.txt
+.\services\brain\.venv\Scripts\python.exe scripts/models/provision_agent_reference.py
+.\jarvis.ps1
+```
+
+The GGUF and manifest were provisioned on the development host. Downloading is explicit;
+startup verifies the pinned local artifact and never downloads or silently selects another model.
+Model files remain ignored by Git. ONNX is disabled. No training, cloud API or inference server
+is needed. `JARVIS_MODEL_DEVICE=cpu` selects CPU explicitly; CPU speed is unmeasured.
+The 9B GPU profile keeps the output projection on CPU (32 GPU blocks, batch 64) to leave
+headroom on this host's 8 GB GPU. Full offload exhausted the practical GPU budget in a long run.
+Latency and headroom are measured separately from semantic correctness.
+
+`jarvis` defaults to this new profile. `jarvis -Profile qwen3-4b` selects the old GGUF for
+comparison, still using the new loop. Direct Python uses `JARVIS_GGUF_PROFILE=qwen35-9b`
+(default) or `qwen3-4b`; unknown profiles fail. `model-info` reports the selected artifact
+without loading it. `--fast-router` affects only legacy `predict` diagnostics, never execution.
+
+The REPL keeps at most six conversation pairs/2400 characters in memory. Private current
+result/folder/application bindings expire after 120 seconds; `/reset` clears all capability
+state. A separate `ask` process has no previous session. Default file opening uses the Windows
+association; explicit PDF opening supports the existing Chrome/Edge adapter. File discovery
+reads names/metadata only. Content reading, mutation, uploads and downloaded skills are absent.
+
+Current checks (use the existing base interpreter and venv packages if its redirector is absent):
+
+```powershell
+$env:PYTHONPATH = "$pwd;$pwd/services/brain/src;$pwd/services/brain/.venv/Lib/site-packages"
+python -m ruff check services/brain scripts
+python -m ruff format --check services/brain scripts
+python -m pytest services/brain/tests
+$env:JARVIS_RUN_ENGLISH_AGENT_TESTS = '1'
+$env:JARVIS_AGENT_TEST_PROFILE = 'qwen35'
+python -m pytest services/brain/tests/integration/test_english_agent_acceptance.py -o addopts='' -q
+# Opt-in actual GUI launches, refuses a running Core and verifies isolated synthetic roots:
+python scripts/tests/run_agent_live.py
+```
+
+The Python fixture controller is a development-only bootstrap of the exact repository Core,
+not a product execution path. It refuses an existing responsive Core and stops only its own
+process. Model-driven openings still use the real Named Pipe/registry/policy pipeline.
+The PowerShell fixture script is also available where local execution policy permits it;
+do not bypass policy. Earlier Turkish tests remain under `JARVIS_RUN_ASSISTANT_TESTS=1`.
+
+These real-model checks are synthetic behavioral probes, not a claim to cover all possible
+requests. Historical intent unit tests explicitly use `LegacyBrain`; those pass counts are
+not semantic acceptance of this new agent. Old diagnostic setup and reports below are archival
+and do not override the runtime/provisioning instructions above.
+
+## Historical implementation and setup notes
+
+TASK-004 adds scoped file/folder metadata search, directory listing and catalog-ID based opening
+through Core. Use the GGUF backend for interactive file requests. See ../../docs/brain/FILE_SKILLS.md
+for examples, scope configuration, checks and limitations. Document-content reading is not yet
+supported; model-generated paths or file IDs are rejected.
+
 This Python 3.12+ package contains the local TASK-003 intent runtime and the TASK-002 client for
-the trusted Rust Core. A small deterministic Fast Router handles obvious commands; other commands
-fall back lazily to a locally provisioned Qwen3-0.6B INT4 CPU model through ONNX Runtime GenAI.
+the trusted Rust Core. The active model is locally provisioned Qwen3-4B GGUF through in-process
+llama-cpp-python. ONNX is disabled in production selection; there is no ONNX fallback.
 
 Brain never discovers or launches applications, implements system status, runs a shell, or copies
 the Rust tool registry. Every machine action remains:
@@ -20,8 +97,8 @@ py -3.12 -m venv .\services\brain\.venv
 .\services\brain\.venv\Scripts\python.exe -m pip install -e ".\services\brain[dev]"
 ```
 
-Production inference depends on `onnxruntime-genai==0.15.2`; it does not require PyTorch or
-Transformers. Those packages exist only in the isolated provisioning environment.
+Install the pinned GGUF/CUDA requirements below for inference. ONNX Runtime GenAI is no longer
+a required package dependency. Production does not require PyTorch or Transformers.
 
 ## One-command terminal launcher
 
@@ -46,8 +123,8 @@ new model unambiguously without setting environment variables:
 ```
 
 The launcher displays backend/routing selection and restores the previous backend environment
-on exit. Use `-Model onnx` for the historical model, or `-FastRouter` to restore legacy routing.
-Direct Python CLI commands still use `JARVIS_MODEL_BACKEND` (default `onnx`); `--force-model`
+on exit. `-Model onnx` is rejected. `-FastRouter` selects legacy routing diagnostics.
+Direct Python CLI commands use `JARVIS_MODEL_BACKEND` (default `gguf`); `--force-model`
 does not select GGUF. `--fast-router` opts into routing. Library/evaluation defaults are unchanged.
 These are intent models, not a general chat interface; greetings can still be misclassified.
 
@@ -57,8 +134,8 @@ See [measured comparison and known failures](../../docs/brain/LOCAL_MODEL_COMPAR
 
 The user-authorized replacement candidate is Qwen3-4B-Instruct-2507 Q4_K_M (2,497,281,120
 bytes), running **in-process** with llama-cpp-python 0.3.35. No HTTP server, cloud provider,
-runtime download, PyTorch or Transformers is used. The historical ONNX backend remains the
-default until comparative quality is accepted. Explicit provisioning on this NVIDIA Windows host:
+runtime download, PyTorch or Transformers is used. GGUF is the active default and ONNX cannot
+be selected through the factory. Explicit provisioning on this NVIDIA Windows host:
 
 ```powershell
 .\services\brain\.venv\Scripts\python.exe -m pip install -r scripts/models/requirements-gguf-cuda.txt
@@ -84,7 +161,8 @@ $env:JARVIS_RUN_GGUF_TESTS = '1'
 .\services\brain\.venv\Scripts\python.exe -m pytest services/brain/tests/integration/test_real_gguf.py
 ```
 
-Set `JARVIS_MODEL_BACKEND=onnx` to return explicitly to the historical baseline.
+`JARVIS_MODEL_BACKEND=onnx` produces an explicit disabled-backend error. Historical ONNX source,
+provisioning notes and isolated adapter tests remain archival material, not a supported runtime.
 
 From the repository root, run a single request with:
 
@@ -216,3 +294,43 @@ generation with a typed error. Session reset and memory limits remain unchanged.
 If the venv console launcher is missing but its base interpreter and packages still exist,
 jarvis.ps1 can use the existing interpreter recorded in pyvenv.cfg, with no download or reinstall.
 See ../../docs/brain/REQUEST_ROUTING.md for validation and limits.
+
+FileSession also keeps a private active-folder context for explicit relative searches (120s),
+natural-name selection of displayed results, and a concrete local-browser confirmation across
+“evet”. Multiple matching files/folders require selection. Local PDF with Chrome/Edge uses the
+registered Rust open_file_with_app after fresh application resolution. Google Docs uploading
+is unsupported. No raw paths/IDs enter model history. See ../../docs/brain/FILE_SKILLS.md.
+
+Semantic file planning now receives bounded displayed names/kinds, not IDs/locations. Unmatched
+natural selections go through model admission/prediction before file state is cleared. The model
+proposes a human target and optional open_file.application; empty/omitted application uses normal
+Windows association. File planning excludes free-form assistant replies, while conversation/recall
+keeps the original memory. See ../../docs/brain/FILE_REASONING.md for tests and limits.
+
+select_file is a separate semantic displayed-page operation with number/action/application fields.
+The current-page ID binding is private and expires after 120s. Numeric list-address constraints
+prevent wrong model search/name predictions from falling through into new machine queries. Stable
+display numbers survive candidate-budget omissions; selection never searches for a filename.
+Windows default association and explicit supported adapters remain separate from target selection.
+See ../../docs/brain/FILE_SELECTION.md for reproduction and exact validation commands.
+
+GGUF also interprets indirect lost-file requests without requiring command syntax or an exact
+filename. Admission distinguishes locating a file from asking how to search; a focused structured
+search pass extracts metadata clues. Prior chat denials do not become planning capability rules.
+Search remains scoped metadata discovery, without reading contents or exact date filtering.
+See ../../docs/brain/NATURAL_FILE_GOALS.md for everyday-language cases, evidence and limitations.
+
+GGUF `handle_text` now uses a structured dialogue planner and a 120-second file goal with
+location/type clues, rejected candidates, a pending question and verified outcome feedback.
+The diagnostic `predict` interface remains separate; historical ONNX is disabled in production.
+Named application
+choices are independent of file formats; omitted choices use Windows association. Scope,
+precision and wrong-action acceptance are documented in ../../docs/brain/ASSISTANT_DIALOGUE.md.
+Rebuild/restart Core and relaunch Brain after this update; older Core builds reject the new
+recursive/category/exclude_ids search arguments.
+
+Current assistant quality is **not accepted**. ONNX removal does not fix the GGUF semantic
+failures. Replies now receive bounded current file metadata and preserve task/page lifetime
+without extending it or executing actions. New real-model dialogue regressions still fail on
+typos, pronoun opening and recommendation routing. See
+../../docs/brain/ASSISTANT_REASSESSMENT.md for current evidence and reproduction.

@@ -24,6 +24,38 @@ impl WindowsDesktopPlatform {
 }
 
 impl DesktopPlatform for WindowsDesktopPlatform {
+    fn open_file_with_app(
+        &self,
+        path: &Path,
+        application: &DiscoveredApplication,
+    ) -> Result<(), JarvisError> {
+        super::file_application::open(path, application)
+    }
+    fn open_file(&self, path: &Path) -> Result<(), JarvisError> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::{
+            Win32::UI::Shell::ShellExecuteW,
+            core::{PCWSTR, w},
+        };
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        // Fixed open verb, catalog-owned document path, no command or caller arguments.
+        let result = unsafe {
+            ShellExecuteW(
+                None,
+                w!("open"),
+                PCWSTR(wide.as_ptr()),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+            )
+        };
+        if result.0 as isize <= 32 {
+            return Err(JarvisError::ExecutionFailed {
+                message: "Windows document association could not open the file".into(),
+            });
+        }
+        Ok(())
+    }
     fn open_application(&self, application: &DiscoveredApplication) -> Result<(), JarvisError> {
         let target = application.launch();
         if let TrustedLaunchTarget::PackagedApplication { aumid } = target {

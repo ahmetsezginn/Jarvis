@@ -8,15 +8,23 @@ from jarvis_brain.intelligence.contract import BrainResponse, ConversationTurn
 class ConversationMemory:
     def __init__(self) -> None:
         self._turns: deque[ConversationTurn] = deque(maxlen=6)
+        self._planning_turns: deque[ConversationTurn] = deque(maxlen=6)
 
     def clear(self) -> None:
         self._turns.clear()
+        self._planning_turns.clear()
 
     def snapshot(self) -> tuple[ConversationTurn, ...]:
         return tuple(self._turns)
 
+    def planning_snapshot(self) -> tuple[ConversationTurn, ...]:
+        """Keep user references/outcomes; chat and refusals are not capability facts."""
+        return tuple(self._planning_turns)
+
     def observe(self, text: str, response: BrainResponse) -> BrainResponse:
         message = response.message
+        if isinstance(response.data, dict) and response.data.get("file_entries"):
+            message = "Dosya/klasör sonuçları gösterildi; numara veya ad seçilebilir."
         if isinstance(response.data, dict) and "candidates" in response.data:
             # Candidate lists have a separate 120-second lifetime; never replay them in history.
             message = "Multiple applications matched; choose a displayed name or number."
@@ -26,6 +34,13 @@ class ConversationMemory:
             self.clear()
             return response
         self._turns.append(turn)
+        planning_message = (
+            ""
+            if response.route == "conversation" or response.intent.value == "unsupported"
+            else message
+        )
+        self._planning_turns.append(ConversationTurn(text, planning_message))
         while sum(len(t.user) + len(t.assistant) for t in self._turns) > 2400:
             self._turns.popleft()
+            self._planning_turns.popleft()
         return response

@@ -1,5 +1,34 @@
 # JARVIS Architecture
 
+## Current production revision: capability agent loop (2026-10-16)
+
+`JarvisBrain.handle_text` now runs a bounded `AgentRuntime`, not the historical classifier/TurnPlan
+pipeline described in dated sections below. The model receives registered semantic capability
+schemas, bounded conversation and verified name/kind/number metadata. It chooses one tool or a
+reply; validated tool results return to the same model for its next step (five-step limit).
+`AgentModel` is the provider boundary. Provider-native chat templates/tool protocols are parsed
+and then independently validated by `CapabilityRegistry`; reply text is output only.
+
+Capabilities register schema, handler, effect/permission metadata, required Core tools and optional
+context/reset/turn hooks. The registry is the shared source of model descriptions and dispatch;
+adding a trusted local capability does not require editing the loop or a closed intent enum.
+No remote skill downloader, untrusted plugin execution or additional OS access is implemented.
+Core remains the final authority: JarvisCoreClient -> Named Pipe -> registry -> validation ->
+policy -> executor -> platform. Model IDs, paths and shell commands never establish authority.
+Side effects have an independent current-message/target/application assessment before dispatch.
+Bounded private file/app bindings and explicit confirmations remain outside model text.
+
+The user-selected product language is now English. Presentation renders typed verified results,
+separately from archived Turkish messages. Original Unicode names and private catalog bindings
+are preserved. Parameter schemas document defaults/limitations and validate declared defaults;
+free text is an explicit field format, not a special field name. Cross-turn verified observations
+retain native assistant-tool-call/tool-result roles with their originating conversation turn,
+within the existing TTL and memory bounds; rendered filesystem paths never enter model history.
+
+`LegacyBrain` retains old diagnostics and historical tests only. It is not a production fallback.
+ONNX remains disabled. See [AGENT_LOOP.md](../docs/brain/AGENT_LOOP.md) for current model evaluation,
+limits and exact validation; older dated acceptance counts apply only to their old implementations.
+
 ## 1. Purpose
 
 This document defines the initial architecture for JARVIS.
@@ -923,3 +952,190 @@ it. Recovery refreshes once, re-resolves the query, then continues the original 
 opening request through policy; ambiguity still requires selection. No retry loop or post-launch
 verification is added. The model's four-intent contract and conversation isolation are unchanged.
 See docs/brain/CATALOG_REFRESH.md for accepted phrases, tests and limitations.
+
+### Scoped file/folder skills (2026-10-12)
+
+User-authorized TASK-004 extends the historical four-intent contract with search_files, list_folder,
+open_file, open_directory, file_catalog_status and refresh_file_catalog. Model search requires a
+human query and sort/extension/kind fields; targeted opening/listing requires only a human query.
+The model cannot supply paths, roots, IDs or executable instructions. Conversation admission,
+strict parsing, confidence checks and Native Core authority remain mandatory.
+
+Rust owns an in-memory FileCatalog using locally configured roots or native Windows Known Folder
+paths. Scans start on first search/explicit refresh and inspect metadata only. Scans/results are
+bounded with explicit scope, partial state and timestamps. Refresh replaces snapshots atomically;
+total failure retains the old snapshot. No persistent index or filesystem watcher is introduced.
+Read-only status/refresh/search/list and low-risk open tools use the production registry, validation,
+policy, executor and audit. Opening uses catalog IDs and revalidates ancestry, canonical paths and
+metadata. Reparse/cloud-only targets are excluded. Supported document/media extensions use a fixed
+native Windows open verb; scripts/programs/shortcuts are rejected. Legacy open_folder(path) remains
+for explicit Core callers, never model-produced Brain paths.
+
+Brain retains one private result page (20 entries, 120s) for numbered/unique-name selection,
+folder/containing-folder follow-ups and pagination. IDs/locations never enter model history.
+Selection is consumed before IPC; reset/cancel/expiry/unrelated turns clear it. No post-launch
+verification. Content reading and file mutation remain later deliveries. See TASK_004.md and
+docs/brain/FILE_SKILLS.md for evidence and limits.
+
+### File context and selected browser opening (2026-10-12)
+
+Brain keeps an active catalog-backed directory for 120 seconds after opening/listing, or after an
+explicit relative reference to a single displayed directory. Relative searches receive that private
+folder_id; unknown or ambiguous folder references ask for selection instead of a global search.
+Natural displayed-name selection tolerates separators, extensions and Turkish selection words;
+multiple matches never auto-open. Concrete Google-to-local-Chrome clarification retains target and
+application until affirmative reply, cancellation, changed request, reset or expiry. Unrelated turns
+clear file context. IDs and locations remain outside model history; no semantic intent expansion.
+
+open_file_with_app is a low-risk registered tool. Both catalogs validate IDs; Native Core rechecks
+the document and supports only PDF with Google Chrome/Microsoft Edge. Windows resolves trusted
+Shell links through IShellLinkW/IPersistFile, rejects shortcut arguments, checks the expected browser
+executable and passes exactly one Core-owned document argument without a shell. Packaged targets,
+other applications/types, arbitrary flags and Google Docs upload are unsupported. No post-launch
+verification. Natural Core filename search also matches words across separators, retaining ambiguity.
+
+### Semantic file planning (2026-10-12)
+
+IntentContext has a bounded file_candidates view containing only displayed name/kind pairs
+(<=20, <=1200 name characters, per-name <=256). IDs/locations remain private. Request admission
+and intent prediction receive this data for semantic references; filenames are untrusted JSON data,
+not instructions. Explicit relative searches omit previous candidates so the previous folder kind
+cannot override the type requested inside it. For active file planning, keep at most two recent
+user turns/700 characters and exclude free-form assistant replies, preventing capability hallucinations
+from becoming task rules. Conversation replies/recall retain the original bounded conversation memory.
+
+The model proposes the human target and optional open_file.application (human name, never path,
+executable, flags or ID). Empty/omitted application uses normal Windows association for all existing
+supported document/media types; it does not impose a PDF/browser restriction. Typed validation,
+confidence and unique matching bind displayed targets to private Core IDs. Unknown natural references
+reach the model before selection is discarded; ambiguity never opens the first match. Application
+qualification is removed from native search arguments and, for a supported explicit adapter, routed
+through resolve_app -> open_file_with_app. No new intent or machine execution path is introduced.
+See docs/brain/FILE_REASONING.md for reproduction, verification and remaining limits.
+
+### Displayed-result addresses (2026-10-14)
+
+Search and displayed-result selection now have distinct semantic contracts. select_file carries
+number (1..20), action (open/list/parent), application (human name or empty for default). It never
+accepts query/path/entry_id/app_id. This is not a new Core tool or transport version. Brain binds
+the number to the current unexpired displayed page, consumes selection before IPC, then dispatches
+existing open_file/open_directory/list_directory/open_containing_folder or resolve_app followed
+by open_file_with_app. The selection executor has no filesystem-search fallback.
+
+FileCandidate includes its original UI number. Budgeted model views can omit names without changing
+the positions of remaining rows. A compact GGUF file-planning prompt describes the independent target,
+operation and application fields; ordinary fresh-name searches retain the existing task prompt.
+Literal numeric list notation is also parsed into a reference constraint (not an action). After
+normal admission, runtime requires the proposed select_file number to match it and the page to be
+valid; even a faulty search_files(query="2") cannot overwrite the CV page with a global search.
+Quantity/filename queries remain searches. Relative folder search, numbered selection and ordinary
+conversation are different paths. Existing explicit unambiguous shorthand selection remains available.
+See docs/brain/FILE_SELECTION.md for tests and limits.
+
+### Natural file goals and memory provenance (2026-10-14)
+
+GGUF admission now uses a closed purpose schema instead of directly guessing a binary route:
+locate_file/perform_action map to task; how_to/capability/recall/prohibition/discussion map to
+conversation. Exact-key parsing, finite confidence checks and existing admission thresholds remain
+mandatory. RequestRoute optionally retains this validated purpose; ONNX retains its compact
+historical binary prompt/schema. A purpose is not a tool, target identity or permission.
+For locate_file, runtime suppresses displayed candidates in the planning view and accepts only
+search_files/clarify, preventing a repeated search from opening or implicit folder listing.
+Private catalog-backed scope/page state remains with FileSession. Other providers without a
+purpose preserve the historical routing contract. No execution boundary was changed.
+
+An internal validated IntentContext.locating_file flag selects focused search planning directly
+for admitted locating requests. Other fresh actions retain their existing reasoning prompt;
+displayed selections retain their separate planner. The flag adds no execution authority.
+Locating tasks use this focused planner for indirect, colloquial lost-file requests. Metadata
+search uses a short name/topic clue, with explicit filters separated from the topic; search does
+not imply opening. Displayed references still use the separate numbered/semantic selection planner.
+Recency can affect sorting, not an invented exact-date filter. No content reading was added.
+GGUF search plans have a focused inference: a bounded wanted_item description precedes
+query/sort/extension/kind/confidence in a separate exact schema. The description is discarded;
+only the existing validated search intent leaves the adapter. It cannot introduce opening or
+another operation. Locating admission goes directly to this search schema, avoiding a competing
+general action interpretation. Other admitted actions which select search_files receive the same
+focused extraction, without increasing the capability-choice confidence. Numeric page addresses
+skip extraction and remain subject to the current-page guard. No tool, network call, training
+or execution authority is added.
+
+ConversationMemory maintains two parallel bounded views. Conversation/recall preserves user and
+assistant text; planning preserves user references, clarifications and execution outcomes but omits
+chat replies and unsupported claims. Thus a hallucinated refusal cannot become a capability rule
+on the next retry. Existing candidate redaction, lifetime, reset and character limits remain.
+See docs/brain/NATURAL_FILE_GOALS.md for evaluation evidence and limitations.
+
+### Stateful assistant dialogue (2026-10-15)
+
+The GGUF execution path now uses validated dialogue moves before any file action. A read-only
+speech-act decision is followed by separate target, operation and constraint extraction. Closed
+TurnPlan fields carry human clues/location/type/depth and never executable paths or IDs. Missing
+information may yield a focused slot question. Replies fill that slot without reinterpreting the
+answer as a new operation. Legacy ONNX and diagnostic predict/classify APIs remain independent.
+
+AssistantSession retains one FileGoal with 120s private bindings and a bounded, in-memory last
+verified outcome until reset. Human constraints
+are separate from FileSession's private current page and Core-backed scope. Rejecting results
+discards the failed name hypothesis and excludes at most 100 Core IDs. An explicit replacement
+name may reconsider earlier candidates. Reset/cancel/expiry clear private bindings. Chat suspends
+file selection; explanation reads the last outcome without tool dispatch. Model self-confidence
+is not treated as a calibrated probability; strict contracts and operation guards remain required.
+
+Scope resolution searches trusted directory metadata and requires a unique human match, never
+a model path or a global fallback after missing scope. Native search adds recursive (default true),
+a closed metadata category, and bounded exclude_ids. recursive=false requires a catalog folder_id
+and matches immediate children only. list_directory continues to list direct children. All fields
+pass registry validation and policy. Categories filter extensions and do not read document contents.
+
+After a failed name search, at most one additional read-only search may broaden the name to a type
+within the same resolved scope. Results never auto-open after this recovery. A normal opening
+requires a current positive request plus a unique trusted identity. Numbered pages preserve their
+reference guard. A current-message positive opening-operation guard checks proposed openings; identity
+corrections may show a result without launching it. Default Windows association and explicit PDF
+browser adapters remain separate. No post-launch checking or new direct OS path is introduced.
+
+Outcome summaries, pending question and task slots provide feedback to the next turn. Arbitrary
+assistant capability claims are not promoted into verified state. Current-message extraction
+does not copy old targets; dialogue-move classification sees bounded state flags and current
+displayed names/kinds, not a replay of the whole dialogue. Operation extraction includes an
+explicit unsupported choice so content reading,
+uploading or deleting cannot be substituted with opening. Named app parameters require concrete
+names; generic capability category nouns ask which app without a Core request. Literal UI numbers
+remain page addresses, while the current action is validated independently. Performance/quality
+acceptance must include precision, scope and wrong-action
+checks with distractor files and multi-turn corrections; target inclusion alone is insufficient.
+
+Communicative-purpose admission excludes old commands and displayed names; it sees only the current message
+and a bounded genuine pending slot question. Target binding receives the separate bounded page
+context, while conversational recall receives its history. A model-provided concrete target quote
+must occur in the current message. Generic capability questions cannot borrow the displayed row
+as a target. The existing validated result selector refines displayed target/action choices; it
+does not bypass current-purpose, current-opening, confidence or private-page checks.
+Omitted sort constraints use keep inside TurnPlan, preserving existing newest/largest ordering
+through scope refinements. Only concrete name/newest/largest reaches the Native Core. Path-free
+outcome summaries are separate from the rendered listings that show locations to the user.
+Both displayed-selection routes independently extract the current opening application; a valid
+target choice cannot discard an explicit app or infer a browser solely from file format.
+Target-only matching copies a unique displayed filename using only this page and current reference.
+Python maps that existing name to its original number; a decoder's numeric guess is insufficient.
+Duplicate/invented names ask for clarification. Literal numeric addresses are checked against
+the private unexpired page before model planning. An ungrounded optional admission quote is
+discarded and cannot refine generic capability admission into selecting a displayed result.
+
+### Model retirement and metadata discussion (2026-10-16)
+
+User disabled ONNX. The production factory and launcher use GGUF only and reject ONNX explicitly;
+no fallback or ONNX runtime import is allowed. GenAI is no longer a mandatory dependency. Archived
+adapter/test source does not constitute a selectable production provider.
+
+Conversation replies now receive the current bounded file candidate view (names/kinds/original
+numbers only) along with bounded history. Rendering the final conversation message preserves
+this metadata without repeating history. Reply text is never dispatched as an action. Discussing
+results keeps the current goal/page until their existing deadline; it neither renews lifetime nor
+supplies permission. Cancel/reset/expiry still discard bindings. This revises the earlier rule
+that all chat consumes a file goal; metadata discussion needs continuity for a subsequent request.
+
+The fragmented production planner is NOT accepted as a general assistant. Real regressions still
+misroute recommendations, miss spelling corrections and unnecessarily clarify singleton pronouns.
+See docs/brain/ASSISTANT_REASSESSMENT.md; a failed alternative planner was not promoted to production.

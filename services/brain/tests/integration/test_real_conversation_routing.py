@@ -4,6 +4,7 @@ import os
 import socket
 
 import pytest
+from scripts.evaluation.analyze_file_assistance import TracedModel
 
 from jarvis_brain.errors import ModelInferenceError
 from jarvis_brain.intelligence.contract import IntentName
@@ -42,12 +43,14 @@ def test_real_conversation_cannot_activate_core_tools(factory, flag, monkeypatch
                 data = {"app": {"app_id": "trusted-chrome", "name": "Google Chrome"}}
             elif tool == "open_app":
                 data = {"name": "Google Chrome", "opened": True}
+            elif tool == "search_files":
+                data = {"entries": [], "total": 0, "partial": False}
             else:
                 data = {"cpu_usage_percent": 12, "memory": {"usage_percent": 50}}
             return ToolResult("id", tool, "success", data, None)
 
     core = Core()
-    model = factory()
+    model = TracedModel() if factory is QwenGgufIntentModel else factory()
     try:
         brain = JarvisBrain(core, model, fast_router_enabled=True)
         for text in ("nasılsın", "How are you?", "What is RAM?", "How do I open Chrome?"):
@@ -74,13 +77,16 @@ def test_real_conversation_cannot_activate_core_tools(factory, flag, monkeypatch
             assert "Conversation replies are not validated" in str(error)
         else:
             assert not folder.executed
-        assert core.calls == []
+        assert all(tool == "search_files" for tool, _ in core.calls)
+        core.calls.clear()
         if factory is QwenOnnxIntentModel:
             with pytest.raises(ModelInferenceError, match="Conversation replies are not validated"):
                 brain.handle_text("ben sana hangi klasörü aç demiştim?")
             assert core.calls == []
         else:
+            model.events.clear()
             recalled = brain.handle_text("ben sana hangi klasörü aç demiştim?")
+            print("Recall trace:", model.events)
             assert recalled.intent is IntentName.RESPOND
             recalled_text = recalled.message.casefold().replace("\u0307", "")
             assert "indirilenler" in recalled_text or "downloads" in recalled_text

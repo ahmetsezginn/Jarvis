@@ -3,6 +3,7 @@ pub mod audit;
 pub mod config;
 pub mod core;
 pub mod executor;
+pub mod files;
 pub mod ipc;
 pub mod platform;
 pub mod policy;
@@ -27,6 +28,20 @@ pub fn build_executor(
     catalog: Arc<ApplicationCatalog>,
     audit: Arc<dyn AuditSink>,
 ) -> Result<Executor, JarvisError> {
+    build_executor_with_files(
+        platform,
+        catalog,
+        audit,
+        Arc::new(files::FileCatalog::new(Vec::new())?),
+    )
+}
+
+pub fn build_executor_with_files(
+    platform: Arc<dyn DesktopPlatform>,
+    catalog: Arc<ApplicationCatalog>,
+    audit: Arc<dyn AuditSink>,
+    files: Arc<files::FileCatalog>,
+) -> Result<Executor, JarvisError> {
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(SystemStatusTool::new()))?;
     registry.register(Arc::new(OpenFolderTool::new()))?;
@@ -35,7 +50,14 @@ pub fn build_executor(
         Arc::new(DeterministicApplicationResolver),
     )))?;
     registry.register(Arc::new(RefreshAppCatalogTool::new(catalog.clone())))?;
-    registry.register(Arc::new(OpenAppTool::new(catalog)))?;
+    registry.register(Arc::new(OpenAppTool::new(catalog.clone())))?;
+    registry.register(Arc::new(tools::files::OpenFileWithAppTool::new(
+        files.clone(),
+        catalog,
+    )))?;
+    for tool in tools::files::FileCatalogTool::all(files) {
+        registry.register(tool)?;
+    }
 
     Ok(Executor::new(
         registry,

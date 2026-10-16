@@ -12,7 +12,7 @@ from typing import Any
 from jarvis_brain.core.client import JarvisCoreClient, open_application
 from jarvis_brain.errors import JarvisBrainError
 from jarvis_brain.intelligence.contract import BrainResponse
-from jarvis_brain.intelligence.models.factory import create_intent_model
+from jarvis_brain.intelligence.models.factory import create_agent_model
 from jarvis_brain.intelligence.runtime import JarvisBrain
 
 
@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(arguments: Sequence[str] | None = None) -> int:
     parsed = build_parser().parse_args(arguments)
-    model = create_intent_model()
+    model = create_agent_model()
     if parsed.command == "model-info":
         _print_json(model.model_info())
         return 0
@@ -87,11 +87,8 @@ def run(arguments: Sequence[str] | None = None) -> int:
             _print_response(response, json_output=parsed.json)
         elif parsed.command == "repl":
             brain = JarvisBrain(core, model, fast_router_enabled=parsed.fast_router)
-            print(
-                f"Model: {type(model).__name__}; "
-                "Sohbet/görev ayrımı: ON; Fast Router: OFF (execution path)"
-            )
-            print("JARVIS hazır. exit / çık: çıkış; /reset: bağlamı temizle.")
+            print(f"Model: {type(model).__name__}; Agent loop: ON; tool feedback: ON")
+            print("JARVIS ready. exit: quit; /reset: clear session context.")
             try:
                 while True:
                     try:

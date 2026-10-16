@@ -11,6 +11,8 @@ use super::{DesktopPlatform, MemoryStatus, SystemStatus};
 pub struct PlatformCalls {
     pub opened_applications: Vec<String>,
     pub opened_folders: Vec<PathBuf>,
+    pub opened_files: Vec<PathBuf>,
+    pub opened_files_with_apps: Vec<(PathBuf, String)>,
     pub system_status_count: usize,
 }
 
@@ -55,6 +57,26 @@ impl FakeDesktopPlatform {
 }
 
 impl DesktopPlatform for FakeDesktopPlatform {
+    fn open_file_with_app(
+        &self,
+        path: &Path,
+        application: &DiscoveredApplication,
+    ) -> Result<(), JarvisError> {
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .opened_files_with_apps
+            .push((path.to_path_buf(), application.app_id().to_string()));
+        Ok(())
+    }
+    fn open_file(&self, path: &Path) -> Result<(), JarvisError> {
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .opened_files
+            .push(path.to_path_buf());
+        Ok(())
+    }
     fn open_application(&self, application: &DiscoveredApplication) -> Result<(), JarvisError> {
         self.calls
             .lock()

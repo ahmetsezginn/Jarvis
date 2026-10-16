@@ -2,6 +2,6 @@
 $jarvisRepositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $jarvisLauncherPath = Join-Path $jarvisRepositoryRoot 'jarvis.ps1'
 $jarvisCommand = {
-    & $jarvisLauncherPath -Model gguf @args
+    & $jarvisLauncherPath @args
 }.GetNewClosure()
 Set-Item -Path Function:global:jarvis -Value $jarvisCommand

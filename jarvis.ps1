@@ -1,12 +1,15 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Position = 0)]
     [string]$Text,
 
     [switch]$StopCoreOnExit,
 
-    [ValidateSet('onnx', 'gguf')]
-    [string]$Model,
+    [ValidateSet('gguf')]
+    [string]$Model = 'gguf',
+
+    [ValidateSet('qwen35-9b', 'qwen3-4b')]
+    [string]$Profile = 'qwen35-9b',
 
     [switch]$FastRouter
 )
@@ -16,25 +19,25 @@ $repositoryRoot = $PSScriptRoot
 $coreExecutable = Join-Path $repositoryRoot 'target\debug\jarvis-core.exe'
 $brainPython = Join-Path $repositoryRoot 'services\brain\.venv\Scripts\python.exe'
 $previousBackend = $env:JARVIS_MODEL_BACKEND
+$previousProfile = $env:JARVIS_GGUF_PROFILE
 $previousPythonPath = $env:PYTHONPATH
 if ($Model) { $env:JARVIS_MODEL_BACKEND = $Model }
+$env:JARVIS_GGUF_PROFILE = $Profile
 $routingArguments = @()
 if ($FastRouter) { $routingArguments = @('--fast-router') }
-$modelManifest = Join-Path $repositoryRoot 'models\qwen3-0.6b-int4\MODEL_MANIFEST.json'
-if ($env:JARVIS_MODEL_BACKEND -eq 'gguf') {
-    $modelManifest = Join-Path $repositoryRoot 'models\qwen3-4b-gguf\MODEL_MANIFEST.json'
-}
+$modelFolder = if ($Profile -eq 'qwen35-9b') { 'qwen35-9b-reference' } else { 'qwen3-4b-gguf' }
+$modelManifest = Join-Path $repositoryRoot "models\$modelFolder\MODEL_MANIFEST.json"
 $startedCore = $null
 
 function Assert-JarvisPrerequisites {
     if (-not (Test-Path -LiteralPath $coreExecutable -PathType Leaf)) {
-        throw "Rust Core bulunamadı: $coreExecutable`nÖnce cargo build --manifest-path .\core\native\Cargo.toml çalıştırın."
+        throw "Rust Core not found: $coreExecutable`nRun cargo build --manifest-path .\core\native\Cargo.toml first."
     }
     if (-not (Test-Path -LiteralPath $brainPython -PathType Leaf)) {
-        throw "Brain Python ortamı bulunamadı: $brainPython`nservices\brain kurulumunu tamamlayın."
+        throw "Brain Python environment not found: $brainPython`nComplete the services\brain setup."
     }
     if (-not (Test-Path -LiteralPath $modelManifest -PathType Leaf)) {
-        throw "Yerel Qwen modeli bulunamadı: $modelManifest`nservices\brain\README.md içindeki seçilen modelin kurulumunu tamamlayın."
+        throw "Local Qwen model not found: $modelManifest`nComplete the selected model setup in services\brain\README.md."
     }
 }
 
@@ -85,7 +88,7 @@ function Start-JarvisCore {
     $existingProcesses = @(Get-ProjectJarvisCoreProcesses)
     if ($existingProcesses.Count -gt 0) {
         $processIds = ($existingProcesses.Id -join ', ')
-        throw "JARVIS Core süreci çalışıyor fakat Named Pipe yanıt vermiyor (PID: $processIds). Süreci kapatıp yeniden deneyin."
+        throw "JARVIS Core is running but its Named Pipe is not responding (PID: $processIds). Stop that process and try again."
     }
 
     $script:startedCore = Start-Process `
@@ -101,16 +104,16 @@ function Start-JarvisCore {
             return
         }
         if ($script:startedCore.HasExited) {
-            throw "Rust Core başlatılamadı; çıkış kodu: $($script:startedCore.ExitCode)"
+            throw "Rust Core could not start; exit code: $($script:startedCore.ExitCode)"
         }
     }
-    throw 'Rust Core Named Pipe 10 saniye içinde hazır olmadı.'
+    throw 'Rust Core Named Pipe was not ready within 10 seconds.'
 }
 
 function Invoke-JarvisText([string]$UserText) {
     & $brainPython -m jarvis_brain.cli ask @routingArguments $UserText
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "JARVIS isteği başarısız oldu (çıkış kodu $LASTEXITCODE)."
+        Write-Warning "JARVIS request failed (exit code $LASTEXITCODE)."
     }
 }
 
@@ -135,9 +138,9 @@ try {
         }
     }
     Assert-JarvisPrerequisites
-    $selectedBackend = 'onnx'
+    $selectedBackend = 'gguf'
     if ($env:JARVIS_MODEL_BACKEND) { $selectedBackend = $env:JARVIS_MODEL_BACKEND }
-    Write-Host "JARVIS model: $selectedBackend | Sohbet/görev ayrımı: ON"
+    Write-Host "JARVIS model: $selectedBackend/$Profile | Agent loop: ON"
     Start-JarvisCore
     if ($Text) {
         Invoke-JarvisText $Text
@@ -146,10 +149,11 @@ try {
 
     & $brainPython -m jarvis_brain.cli repl @routingArguments
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "JARVIS oturumu başarısız oldu (çıkış kodu $LASTEXITCODE)."
+        Write-Warning "JARVIS session failed (exit code $LASTEXITCODE)."
     }
 } finally {
     $env:JARVIS_MODEL_BACKEND = $previousBackend
+    $env:JARVIS_GGUF_PROFILE = $previousProfile
     $env:PYTHONPATH = $previousPythonPath
     if ($StopCoreOnExit -and $null -ne $startedCore -and -not $startedCore.HasExited) {
         Stop-Process -Id $startedCore.Id

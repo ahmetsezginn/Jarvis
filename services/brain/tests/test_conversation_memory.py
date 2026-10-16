@@ -11,15 +11,38 @@ from jarvis_brain.intelligence.contract import (
     IntentResult,
 )
 from jarvis_brain.intelligence.conversation import ConversationMemory
+from jarvis_brain.intelligence.legacy_runtime import LegacyBrain as JarvisBrain
 from jarvis_brain.intelligence.models.fake import FakeIntentModel
 from jarvis_brain.intelligence.models.qwen_gguf import build_prompt
 from jarvis_brain.intelligence.prompts import build_non_thinking_prompt, build_user_payload
-from jarvis_brain.intelligence.runtime import JarvisBrain
 
 
 class NoCore:
     def execute_tool(self, *args):
         pytest.fail("non-action reached Core")
+
+
+def test_planning_history_does_not_promote_chat_or_refusal_to_capability_rules():
+    memory = ConversationMemory()
+    memory.observe(
+        "help find my document",
+        BrainResponse(
+            IntentName.UNSUPPORTED, 1, "model", False, "Finding documents is unsupported."
+        ),
+    )
+    memory.observe(
+        "can you help",
+        BrainResponse(IntentName.RESPOND, 1, "conversation", False, "I cannot search files."),
+    )
+    assert all(turn.assistant for turn in memory.snapshot())
+    assert all(not turn.assistant for turn in memory.planning_snapshot())
+    assert [t.user for t in memory.snapshot()] == [t.user for t in memory.planning_snapshot()]
+    memory.observe(
+        "open it", BrainResponse(IntentName.CLARIFY, 1, "model", False, "Which document?")
+    )
+    assert memory.planning_snapshot()[-1].assistant == "Which document?"
+    memory.clear()
+    assert memory.snapshot() == memory.planning_snapshot() == ()
 
 
 class RecordingModel(FakeIntentModel):
