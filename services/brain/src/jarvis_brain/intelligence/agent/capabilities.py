@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-
 from jarvis_brain.errors import CoreToolError, ModelOutputInvalid
-from jarvis_brain.intelligence.agent.presentation import file_page, operation_failure
+from jarvis_brain.intelligence.agent.presentation import operation_failure
+from jarvis_brain.intelligence.agent.recommendations import Recommendations
 from jarvis_brain.intelligence.agent.registry import (
     Capability,
     CapabilityRegistry,
@@ -29,6 +28,7 @@ class BuiltinCapabilities:
         self.files = files or FileSession(core)
         self.apps = IntentOrchestrator(core)
         self.app_choices = SelectionSession(clock=self.files._clock)
+        self.recommendations = Recommendations(self.files, self.app_choices)
         self._last_discovery = {}
         self.clear_app_context()
 
@@ -36,6 +36,50 @@ class BuiltinCapabilities:
         """A future trusted capability bundle registers the same objects; no loop edits."""
         registry = CapabilityRegistry(
             [
+                Capability(
+                    "suggest_result",
+                    "Recommend ONE best current file/folder/application candidate using the user's "
+                    "goal and metadata. Choose its original number yourself, not necessarily "
+                    "the first row. Asks whether this is the intended item; NEVER opens it. "
+                    "Use after discovery or rejection, rather than enumerating alternatives. "
+                    "A yes to this question confirms identity only, not permission to open.",
+                    object_schema(number=NUMBER),
+                    self.recommendations.suggest,
+                    available=lambda: bool(self.recommendations.remaining()),
+                    minimum_confidence=0.0,  # A tentative question, never execution authority.
+                ),
+                Capability(
+                    "confirm_suggestion",
+                    "Confirm identity after a locating-only suggestion. NEVER opens. For a pending "
+                    "application-opening choice, choose_app completes the already requested "
+                    "opening.",
+                    object_schema(number=NUMBER),
+                    self.recommendations.confirm,
+                    available=lambda: bool(
+                        self.recommendations.proposed()
+                        and self.recommendations.proposed()["kind"] != "application"
+                    ),
+                ),
+                Capability(
+                    "reject_suggestion",
+                    "User rejected the currently suggested candidate: discard ONLY that original "
+                    "number, keep the others, then suggest the next best match. No machine action. "
+                    "Do not reject the whole result page when one suggestion was rejected.",
+                    object_schema(number=NUMBER),
+                    self.recommendations.reject,
+                    available=lambda: self.recommendations.proposed() is not None,
+                ),
+                Capability(
+                    "show_results",
+                    "Show remaining candidates ONLY when the user asks for a list, alternatives "
+                    "or folder contents. Otherwise use suggest_result for one best candidate.",
+                    object_schema(),
+                    self.show_results,
+                    "act",
+                    "Present the full candidate list only if the current user explicitly asks "
+                    "for all options, alternatives or folder contents, not merely to find one item",
+                    available=lambda: bool(self.recommendations.remaining()),
+                ),
                 Capability(
                     "find_files",
                     "Search local file/folder NAMES in permitted catalog roots, not contents. "
@@ -61,13 +105,36 @@ class BuiltinCapabilities:
                             "recursive",
                             "sort",
                             "exclude_previous",
+                            "name_is_constraint",
                         ),
                         query=text_schema(default=""),
+                        name_is_constraint={
+                            "type": "boolean",
+                            "default": False,
+                            "description": "True only if the CURRENT user supplied mandatory "
+                            "saved filename words. False for an inferred topic/type/name guess. "
+                            "When true, a name miss remains empty; "
+                            "no alternative names are retrieved.",
+                        },
                         location=text_schema(),
-                        kind=text_schema(enum=["file", "directory", "any"], default="file"),
+                        kind=text_schema(
+                            enum=["file", "directory", "any"],
+                            default="file",
+                            description="Filesystem kind only: file, directory or any. "
+                            "Use category for document/media types, never put them in kind.",
+                        ),
                         extension=text_schema(16, pattern=r"[a-zA-Z0-9]{0,16}"),
                         category=text_schema(
-                            enum=["any", "text", "document", "image", "spreadsheet", "presentation"]
+                            enum=[
+                                "any",
+                                "text",
+                                "document",
+                                "image",
+                                "spreadsheet",
+                                "presentation",
+                            ],
+                            description="Document/media category, separate from filesystem kind. "
+                            "Omit when unknown; do not infer from a subject alone.",
                         ),
                         recursive={"type": "boolean", "default": True},
                         sort=text_schema(enum=["name", "newest", "largest"], default="name"),
@@ -80,7 +147,7 @@ class BuiltinCapabilities:
                         },
                     ),
                     self.find_files,
-                    requires=("search_files",),
+                    requires=("search_files", "file_catalog_status"),
                 ),
                 Capability(
                     "list_folder",
@@ -90,7 +157,7 @@ class BuiltinCapabilities:
                         optional=("number", "location"), number=NUMBER, location=text_schema()
                     ),
                     self.list_folder,
-                    requires=("list_directory", "search_files"),
+                    requires=("list_directory", "search_files", "file_catalog_status"),
                 ),
                 Capability(
                     "open_result",
@@ -156,7 +223,8 @@ class BuiltinCapabilities:
                 Capability(
                     "file_inventory",
                     "Answer questions about catalog scope and file/folder counts. "
-                    "Not needed before find_files.",
+                    "Also provides verified root names when a requested folder's spelling or "
+                    "localized label cannot be resolved. Not needed before ordinary find_files.",
                     object_schema(),
                     self.inventory,
                     requires=("file_catalog_status",),
@@ -211,6 +279,13 @@ class BuiltinCapabilities:
             begin=self.begin_app_turn,
             finish=self.finish_app_turn,
         )
+        registry.register_context(
+            "recommendations",
+            self.recommendations.view,
+            self.recommendations.clear,
+            begin=self.recommendations.begin_turn,
+        )
+        registry.register_response_check("recommendations", self.recommendations.answer_feedback)
         registry.register_reference("builtin_results", self.result_reference)
         return registry
 
@@ -220,13 +295,22 @@ class BuiltinCapabilities:
             return None
         apps = self.app_choices.pending_candidates()
         if apps:
-            return ResultReference(number, ("choose_app",), "choose_app", 1 <= number <= len(apps))
+            return ResultReference(
+                number,
+                ("choose_app", "suggest_result", "reject_suggestion"),
+                "choose_app",
+                any(r["number"] == number for r in self.recommendations.remaining()),
+            )
         return ResultReference(
-            number, ("open_result", "list_folder"), "open_result", self.files.accepts_number(number)
+            number,
+            ("open_result", "list_folder", "suggest_result", "reject_suggestion"),
+            "open_result",
+            any(r["number"] == number for r in self.recommendations.remaining()),
         )
 
     def context_view(self):
-        candidates = [asdict(c) for c in self.files.model_candidates()]
+        candidates = self.recommendations.candidates()
+        candidates = [c for c in candidates if c["kind"] != "application"]
         scope = self.files._scope
         result = {"current_results": candidates} if candidates else {}
         if scope and self.files._clock() < self.files._scope_expires:
@@ -237,6 +321,7 @@ class BuiltinCapabilities:
 
     def clear_files(self):
         self.files.clear()
+        self.recommendations.clear()
         self._last_discovery = {}
 
     def _folder(self, location):
@@ -255,14 +340,18 @@ class BuiltinCapabilities:
         )
         entries = self.files._validate_entries(result)
         if not entries:
+            known_roots = self.inventory({}).data["roots"][:20]
             return None, Observation(
                 {
                     "error": "folder_not_found",
                     "requested_folder": location,
+                    "known_catalog_roots": known_roots,
                     "message": (
-                        "The requested folder was not found in the scanned catalog. "
-                        "Do not substitute another folder or global scope; "
-                        "ask for a corrected scope."
+                        "This folder spelling/label returned no matches. The verified root "
+                        "names are supplied: retry an equivalent localized/spelling-corrected "
+                        "label if it identifies the requested scope. Do not substitute a different "
+                        "folder or global scope. If no equivalent can be verified, ask for "
+                        "a corrected scope."
                     ),
                 }
             )
@@ -283,21 +372,34 @@ class BuiltinCapabilities:
         return matches[0], None
 
     def _page(self, response, data):
+        self.recommendations.needs_presentation = bool(self.recommendations.remaining())
         return Observation(
             {
                 "status": "ok",
-                "results": [asdict(c) for c in self.files.model_candidates()],
+                "results": [
+                    c for c in self.recommendations.candidates() if c["kind"] != "application"
+                ],
                 "scope": self.files._scope["name"] if self.files._scope else "permitted_roots",
                 "has_more": bool(self.files._page),
                 "applied_filters": self._last_discovery,
             },
-            file_page(data, self.files._scope),
+            "Partial catalog: files outside the scanned scope may be missing."
+            if data.get("partial")
+            else "",
             response.executed,
         )
 
     def find_files(self, args):
         self.app_choices.clear()
         query = args.get("query", "") or "*"
+        if args.get("name_is_constraint") and query == "*":
+            return Observation(
+                {
+                    "error": "missing_required_name",
+                    "message": "A mandatory filename requires a nonempty name query; "
+                    "do not replace it with a wildcard.",
+                }
+            )
         if query == "*" and not (
             args.get("location")
             or args.get("extension")
@@ -310,9 +412,12 @@ class BuiltinCapabilities:
         folder, error = self._folder(args.get("location", ""))
         if error:
             return error
-        excluded = (
-            [e["entry_id"] for e in self.files._entries] if args.get("exclude_previous") else []
-        )
+        excluded = self.recommendations.excluded_files(args.get("exclude_previous", False))
+        if excluded is None:
+            return Observation(
+                {"error": "rejection_limit", "message": "Refine or reset this search."}
+            )
+        self.recommendations.new_page()
         call = {
             "query": query,
             "kind": args.get("kind", "file"),
@@ -348,15 +453,49 @@ class BuiltinCapabilities:
             "category": args.get("category", "any"),
             "extension": args.get("extension", ""),
             "excluded_count": len(excluded),
+            **({"name_is_constraint": True} if args.get("name_is_constraint") else {}),
         }
+        original_query = query
+        name_matches = data["total"]
+        # A failed name hypothesis can hide an unknown filename. Return bounded contextual
+        # evidence from the SAME verified scope, keeping every other filter/depth/exclusion.
+        # This is retrieval, not model-generated alternate names or a global fallback.
+        alternatives = bool(
+            folder
+            and query != "*"
+            and not name_matches
+            and not args.get("name_is_constraint", False)
+        )
+        if alternatives:
+            call = {**call, "query": "*"}
+            data = self.files._call("search_files", call)
+            self._last_discovery["query"] = "*"
         response = self.files._observe(data, IntentName.SEARCH_FILES, ("search_files", call))
         observation = self._page(response, data)
-        observation.data.update(query=query, total=data["total"], partial=bool(data.get("partial")))
+        observation.data.update(
+            query=call["query"], total=data["total"], partial=bool(data.get("partial"))
+        )
+        if alternatives:
+            observation.data.update(
+                original_name_query=original_query,
+                original_name_matches=name_matches,
+                match_basis="same_scope_alternatives_not_name_matches",
+                interpretation=(
+                    "These are bounded metadata alternatives from the same verified folder, "
+                    "not matches to the original filename query. Rank them using the user's "
+                    "description/type if the saved name was unknown. An explicit exact-name "
+                    "requirement remains unmet; do not recommend another name as its match. "
+                    "Do not claim ownership or knowledge of contents."
+                ),
+            )
         if not data["total"]:
             observation.data["search_semantics"] = (
-                "Filename words/prefixes, not content. A long/inflected query or "
-                "an inferred format/category can hide a match; retry fewer topic words, preserving "
-                "explicit scope. Zero is not proof of absence."
+                "Zero matches this filename/filter hypothesis only, not item absence. "
+                "Descriptions need not occur in saved names. Unless user required an exact "
+                "filename, revise inferred filters with find_files before asking for more clues. "
+                "A supplied folder alone permits bounded discovery: omit query, optionally use "
+                "a known type/category. Preserve explicit scope/depth/exclusions/exact-name "
+                "constraints. Metadata is not document contents; do not open files."
             )
         return observation
 
@@ -372,6 +511,7 @@ class BuiltinCapabilities:
                 return error
         if not entry or entry["kind"] != "directory":
             return Observation({"error": "directory_required"})
+        self.recommendations.new_page()
         call = {"entry_id": entry["entry_id"], "limit": 20}
         data = self.files._call("list_directory", call)
         self.files._set_scope(entry)
@@ -380,7 +520,36 @@ class BuiltinCapabilities:
         return self._page(response, data)
 
     def _entry(self, number):
-        return self.files._entries[number - 1] if self.files.accepts_number(number) else None
+        allowed = any(
+            r["number"] == number and r["kind"] != "application"
+            for r in self.recommendations.remaining()
+        )
+        return self.files._entries[number - 1] if allowed else None
+
+    def show_results(self, args):
+        self.recommendations.mode = "all"
+        self.recommendations.needs_presentation = False
+        self.recommendations.selected = None
+        rows = self.recommendations.visible_records()
+        lines = [f"{r['number']}. {r['name']} ({r['kind']}) — {r['location']}" for r in rows]
+        notice = self.recommendations.notice()
+        if notice:
+            lines.append(notice)
+        spoken = "\n".join(f"{r['number']}. {r['name']}" for r in rows)
+        if len(spoken) > 1024:
+            spoken = (
+                f"Here are {len(rows)} remaining matches. See the results for their full names."
+            )
+        return Observation(
+            {"status": "listed", "count": len(rows)},
+            "\n".join(lines),
+            terminal=True,
+            memory_message=spoken,
+        )
+
+    def _candidate_count(self, number, total):
+        proposed = self.recommendations.proposed()
+        return 1 if proposed and proposed["number"] == number else total
 
     def opening_view(self, args):
         entry = self._entry(args["number"])
@@ -391,7 +560,8 @@ class BuiltinCapabilities:
             "name": entry["name"],
             "kind": entry["kind"],
             "binding": "unexpired_current_page",
-            "candidate_count": len(self.files._entries),
+            "candidate_count": self._candidate_count(args["number"], len(self.files._entries)),
+            "preceding_question": "identify_item" if self.recommendations.proposed() else "none",
             "application": args.get("application", ""),
             "parent": args.get("parent", False),
         }
@@ -450,6 +620,7 @@ class BuiltinCapabilities:
             return Observation({"error": "no_next_page"})
         tool, previous = self.files._page
         call = {**previous, "offset": previous.get("offset", 0) + 20}
+        self.recommendations.new_page()
         data = self.files._call(tool, call)
         return self._page(self.files._observe(data, IntentName.SEARCH_FILES, (tool, call)), data)
 
@@ -477,9 +648,8 @@ class BuiltinCapabilities:
         if response.executed:
             display = f"Opened {args['query']}."
         elif data.get("candidates"):
-            display = "Which application?\n" + "\n".join(
-                f"{i}. {c['name']}" for i, c in enumerate(data["candidates"], 1)
-            )
+            display = ""
+            self.recommendations.needs_presentation = True
         else:
             display = f"Application not found in the catalog: {args['query']}."
         return Observation(data, display, response.executed, terminal=response.executed)
@@ -487,20 +657,24 @@ class BuiltinCapabilities:
     def app_choice_view(self, args):
         choices = self.app_choices.pending_candidates()
         number = args["number"]
-        if not 1 <= number <= len(choices):
+        if not 1 <= number <= len(choices) or not any(
+            r["number"] == number for r in self.recommendations.remaining()
+        ):
             return {"error": "expired_or_invalid_application"}
         return {
             "number": number,
             "name": choices[number - 1].name,
             "binding": "unexpired_current_applications",
-            "candidate_count": len(choices),
+            "candidate_count": self._candidate_count(number, len(choices)),
             "pending_requested_action": "open_app",
         }
 
     def choose_app(self, args):
         choices = self.app_choices.pending_candidates()
         number = args["number"]
-        if not 1 <= number <= len(choices):
+        if not 1 <= number <= len(choices) or not any(
+            r["number"] == number for r in self.recommendations.remaining()
+        ):
             return Observation({"error": "expired_or_invalid_application"})
         selected = choices[number - 1]
         self.app_choices.clear()
@@ -571,8 +745,9 @@ class BuiltinCapabilities:
         result = {"pending_requested_app": self._missing_app} if self.has_missing_app() else {}
         choices = self.app_choices.pending_candidates()
         if choices:
+            result["pending_requested_action"] = "open_app"
             result["current_applications"] = [
-                {"number": i, "name": c.name} for i, c in enumerate(choices, 1)
+                {"number": r["number"], "name": r["name"]} for r in self.recommendations.remaining()
             ]
         return result
 
@@ -584,8 +759,7 @@ class BuiltinCapabilities:
         if not self._created_missing:
             self._missing_app = None
             self._missing_expires = 0
-        if not self._created_choices:
-            self.app_choices.clear()
+        self.app_choices.pending_candidates()  # Expiry is not extended by follow-up dialogue.
 
     def retry_missing_app(self, args):
         query = self._missing_app if self.has_missing_app() else None
@@ -608,7 +782,24 @@ def execute_capability(capability, arguments):
         not isinstance(observation, Observation)
         or type(observation.performed) is not bool
         or type(observation.terminal) is not bool
+        or type(observation.retryable) is not bool
+        or (
+            observation.retryable
+            and (
+                capability.effect != "observe"
+                or capability.requires
+                or observation.performed
+                or observation.terminal
+            )
+        )
         or not isinstance(observation.display, str)
+        or (
+            observation.memory_message is not None
+            and (
+                not isinstance(observation.memory_message, str)
+                or len(observation.memory_message) > 1024
+            )
+        )
         or (
             observation.confirmation is not None
             and (

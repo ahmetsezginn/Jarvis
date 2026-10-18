@@ -543,13 +543,22 @@ fn production_registry_contains_registered_application_and_file_tools() {
             "refresh_file_catalog",
             "resolve_app",
             "search_files",
+            "speech_cancel",
+            "speech_finish",
+            "speech_poll",
+            "speech_speak",
+            "speech_start",
+            "speech_status",
+            "speech_stop",
             "system_status"
         ]
     );
     for tool in &metadata {
         assert_eq!(
             tool.risk_level,
-            if tool.name.starts_with("open_") {
+            if tool.name.starts_with("open_")
+                || (tool.name.starts_with("speech_") && tool.name != "speech_status")
+            {
                 RiskLevel::Low
             } else {
                 RiskLevel::ReadOnly

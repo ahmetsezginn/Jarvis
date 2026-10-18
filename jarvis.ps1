@@ -11,7 +11,9 @@ param(
     [ValidateSet('qwen35-9b', 'qwen3-4b')]
     [string]$Profile = 'qwen35-9b',
 
-    [switch]$FastRouter
+    [switch]$FastRouter,
+
+    [switch]$Desktop
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,6 +23,7 @@ $brainPython = Join-Path $repositoryRoot 'services\brain\.venv\Scripts\python.ex
 $previousBackend = $env:JARVIS_MODEL_BACKEND
 $previousProfile = $env:JARVIS_GGUF_PROFILE
 $previousPythonPath = $env:PYTHONPATH
+$previousPythonEncoding = $env:PYTHONIOENCODING
 if ($Model) { $env:JARVIS_MODEL_BACKEND = $Model }
 $env:JARVIS_GGUF_PROFILE = $Profile
 $routingArguments = @()
@@ -147,6 +150,19 @@ try {
         return
     }
 
+    if ($Desktop) {
+        $desktopPackages = Join-Path $repositoryRoot 'services\desktop\.venv\Lib\site-packages'
+        $env:PYTHONPATH = ((Join-Path $repositoryRoot 'services\brain\src'),
+            (Join-Path $repositoryRoot 'services\brain\.venv\Lib\site-packages'),
+            $desktopPackages, $previousPythonPath | Where-Object { $_ }) -join ';'
+        if (-not (Test-Path -LiteralPath (Join-Path $desktopPackages 'PySide6') -PathType Container)) {
+            throw 'Qt is missing. See services\desktop\README.md for setup.'
+        }
+        $env:PYTHONIOENCODING = 'utf-8'
+        & $brainPython (Join-Path $repositoryRoot 'services\desktop\main.py')
+        return
+    }
+
     & $brainPython -m jarvis_brain.cli repl @routingArguments
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "JARVIS session failed (exit code $LASTEXITCODE)."
@@ -155,6 +171,7 @@ try {
     $env:JARVIS_MODEL_BACKEND = $previousBackend
     $env:JARVIS_GGUF_PROFILE = $previousProfile
     $env:PYTHONPATH = $previousPythonPath
+    $env:PYTHONIOENCODING = $previousPythonEncoding
     if ($StopCoreOnExit -and $null -ne $startedCore -and -not $startedCore.HasExited) {
         Stop-Process -Id $startedCore.Id
     }

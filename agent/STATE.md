@@ -1,5 +1,110 @@
 # Handoff
 
+Latest normal-answer voice/discovery follow-up (2026-10-18): user heard Test voice but normal
+answers were silent; also reported a natural Turkish Desktop-note request failing. Audit found
+speech_start approximately 0.6s after speech_speak. SAPI RunningState=0 means queued, not done.
+Rust now keeps output busy until WaitUntilDone(0) completes the whole queue; speech_poll adds
+output_phase queued/speaking/idle. Qt waits for completion before automatic microphone rearm.
+No fixed speech-duration estimate, saved microphone audio or Python device bypass was added.
+
+Fresh checks: 516 Brain/Qt ordinary passed /175 opt-in skipped (3.60s); 90 Rust ordinary passed
+/3 ignored, fmt and debug build passed. Ruff check/format passed (117 files); unchanged native
+source passed Clippy on Oct16. Actual QML Send -> separate real 9B agent worker -> normal reply ->
+Named Pipe -> Rust SAPI -> completion -> automatic rearm callback passed on Oct18 (25.78s),
+also on Oct16 (25.52s). The final rearm callback is observed without opening a microphone.
+Real EN/TR native output passed 2/18.12s on Oct16. This does not establish user-microphone
+recognition accuracy or a new user confirmation of hearing normal replies.
+
+Discovery distinguishes mandatory saved filename words (find_files.name_is_constraint) from
+model-inferred topics/types. A failed name hypothesis permits one bounded metadata alternative
+query only in the same verified folder, preserving other filters/exclusions. Alternatives are
+explicitly not name/content/ownership matches. Missing folder spelling can return trusted root
+labels through file_catalog_status; no global fallback. Inline name enumerations now obey the
+existing single-suggestion contract. No sentence/document-specific production branches.
+
+IMPORTANT: semantic acceptance still FAILS. Final synthetic unknown-name suite: 5 passed /1
+failed (90.11s). The user's exact Turkish note sentence still omits Desktop scope and searches
+literal not globally; English counterpart, photo, Turkish spreadsheet, mandatory-name negative
+and empty-folder controls passed. Preserve the failing opt-in test. Interim 6/6 is NOT acceptance.
+General English earlier run: 51/56 (419.83s); final focused 16: 12 passed /4 failed (168.55s).
+One of those four was an overstrict test expecting a full filename query rather than equivalent
+stem+extension; corrected, and that control passed in the final six. Real unresolved issues:
+Turkish scope omission, inferred Excel on default XLSX opening, and authorizer accepting an
+unrequested application parameter. Do not hide these failures or claim full-suite acceptance.
+
+Diagnostic native-thinking comparison used the same local weights and fake Core only: English
+passed in both modes; Turkish preserved scope on its first thinking step but later emitted an
+unclosed reasoning/tool response and stopped. No raw reasoning logged or used as an action.
+Production remains non-thinking; this does not prove model capacity is the sole cause.
+See [VOICE_AND_DISCOVERY_FOLLOWUP.md](../docs/brain/VOICE_AND_DISCOVERY_FOLLOWUP.md) for logs,
+exact validation commands and limits. Core rebuilt/started hidden as path-verified PID25816 on
+Oct18; reopen desktop with jarvis -Desktop. No commit/push; inherited uncommitted work preserved.
+
+Previous voice handoff (historical results):
+
+Latest voice reliability follow-up (2026-10-16): user saw text but heard no answer, and reported
+misrecognition. QML startup was forcing English ASR; this was removed and Listen now binds to
+the controller's Auto default. Explicit en/tr remains available; final recognition returns its
+detected language. Rust now discovers installed OneCore voices alongside SAPI without registry
+changes (this host: Tolga tr, Zira en), selects pronunciation per request and supports bounded
+speech-output device selection. Qt adds Output, Voice, Test voice and actual route feedback.
+Recognition selection and pronunciation are separate; English agent text behavior is preserved.
+User subsequently confirmed hearing BOTH live English/Turkish test sentences. This verifies
+audible output for the tested Qt -> Core -> Realtek route; personal-microphone recognition
+accuracy still requires separate evaluation. OMEN is also selectable.
+
+Checks: 511 ordinary Brain/Qt passed /166 skipped (2.44s); 89 Rust ordinary passed /3 ignored.
+Actual Qt -> Named Pipe -> Rust -> SAPI English/Turkish output: 2 passed /17.73s, start and
+completion observed. Six synthetic installed-voice sentences, each explicit and Auto language,
+passed 12 Whisper decodes /76.30s including negations. These clean synthetic fixtures do not
+establish personal-microphone accuracy. Existing Whisper small model/decoder is unchanged.
+Ruff, Rust fmt/Clippy and native build passed. Core was rebuilt and restarted hidden as PID26152;
+reopen the desktop to load UI changes. No commit/push; prior uncommitted work preserved.
+See [DESKTOP_VOICE.md](../docs/brain/DESKTOP_VOICE.md) for current evidence and exact commands.
+
+Latest progressive recommendation follow-up (2026-10-16): the model chooses one best verified
+file/folder/application candidate through suggest_result; CLI, Qt cards and voice present that
+candidate only. Rejection removes only the proposed private identity, preserves alternatives
+and carries exclusions into subsequent searches. Explicit list requests use show_results.
+Identity confirmation alone does not authorize opening; an existing pending app-opening request
+can complete after selection under the unchanged permission check and fresh Core resolution.
+Bindings/rejections retain their original expiry; no new OS access or Rust changes in this follow-up.
+
+Current checks: 508 Brain/Qt ordinary passed / 164 opt-in skipped (3.56s); six real Qwen9B
+recommendation scenarios passed (179.76s), using synthetic metadata and a fake Core only.
+The last full general English acceptance run was 55/56 (489.40s). Its remaining rejection →
+unknown-filename case passed in a focused rerun (35.33s) after an exhausted-page observation
+clarified that rejecting a suggestion is not a fresh search. The complete 56-case suite was
+not rerun after that correction; do not describe this as a measured full-suite 56/56 pass.
+Scope correction and default PDF opening passed in the full run. See
+[RECOMMENDATIONS.md](../docs/brain/RECOMMENDATIONS.md) for exact commands and evidence.
+Restart the Brain/desktop session to load Python/UI changes; no additional Core rebuild needed.
+No commit/push. Earlier voice/desktop changes remain uncommitted alongside this follow-up.
+
+Previous voice handoff (results below are historical):
+
+Latest voice follow-up (2026-10-16): the hold-to-talk buffer error was a CPAL Xrun notification
+being treated as fatal. Typed transient/fatal handling and bounded nonblocking callback delivery
+replace that path. Real 12.05s microphone capture/finish passed with one Xrun on this host.
+Opt-in Auto conversation uses local Silero v6.2.0 GGML CPU VAD (no ONNX), 200ms onset, 800ms
+preroll and 900ms silence endpointing. It defaults off. Qt has waiting/listening/speaking
+animations plus processing; actual SAPI completion controls rearm. Capture pauses for ASR,
+agent reasoning and output. Six-second client lease discards pending PCM, including completed
+turns. Manual/automatic maximum length rejects incomplete commands; cancellation drops late
+transcripts. Voice controls are serialized; stale capture/output replies cannot revive a turn.
+
+Current checks: 88 Rust ordinary passed / 2 opt-in skipped; actual VAD+ASR public fixture passed
+in 19.21s; 17 Qt tests including real Qwen/Named Pipe passed in 14.37s; four actual device tests
+passed in 49.88s. Combined Qt ordinary + Brain: 474 passed / 158 skipped (=458 Brain +16 Qt;
+real Qt worker separately enabled). Ruff, Rust fmt/Clippy and debug build passed. An initial
+pytest temporary-directory access issue was resolved with a fresh project-local --basetemp,
+without ACL/security changes. Current project Core PID 49856 is the rebuilt serve process.
+See [DESKTOP_VOICE.md](../docs/brain/DESKTOP_VOICE.md) for exact checks and historical first delivery.
+No wake word, full duplex, saved recordings or Kokoro. This does not change the agent's semantic
+acceptance (53/56 remains failed). No commit/push; earlier desktop work was already uncommitted.
+
+Previous agent-loop handoff:
+
 M001/M002/M003 and the application catalog refresh follow-up are implemented.
 Latest work (2026-10-16): capability/result-feedback agent replaces production intent/TurnPlan
 classification. Native provider templates, extensible capability/context/reference registration,

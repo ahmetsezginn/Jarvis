@@ -433,6 +433,29 @@ When uncertain, preserve this invariant:
 
 ## Active model revision (2026-10-16)
 
+Latest user-authorized milestone: Qt Quick/QML via PySide6 desktop and local voice
+on the current host. This supersedes the planned TypeScript desktop choice for this delivery.
+Qt may render its fixed resources/fonts and spawn only the fixed Python session worker; it may
+not execute model commands. UI device requests use JarvisCoreClient and registered Rust speech
+tools through the existing policy/executor. Native whisper.cpp CPU speech inference is permitted;
+Python retains task reasoning/planning. PCM stays bounded inside Rust, never in the JSON control
+channel. Final transcript is the same agent input as typed text, never a separate voice router.
+Latest voice follow-up explicitly authorizes opt-in automatic conversation in addition to
+push-to-talk: local Silero GGML VAD, silence endpointing and waiting/listening/speaking animations.
+Automatic listening defaults off and ends on explicit stop, client lease expiry or fatal device
+failure. Pause capture during recognition/reasoning/output and rearm only after actual SAPI
+completion. No persisted recordings, startup microphone/wake word, cloud speech or ONNX restoration.
+Initial TTS is local Windows SAPI; Kokoro remains a later alternative, not a completed feature.
+
+Voice reliability follow-up: discover installed SAPI/OneCore voices read-only in the Rust COM
+thread; no registry copying/writes. Recognition defaults to Auto with explicit en/tr selection.
+Speech pronunciation accepts en/tr and an optional bounded device index, never caller token
+IDs. Missing voice/device must report an error rather than silently changing the language.
+Keep recognition language, pronunciation voice and English agent text behavior separate.
+Normal spoken replies must not be interrupted by automatic rearm during pending synthesis:
+use full SAPI queue completion, not only its instantaneous active-speaking flag. Test the real
+QML/agent/normal-response path, not just a fixed test sentence or fabricated worker event.
+
 Latest user preference: the JARVIS product interaction is English. Preserve Unicode file/folder
 names and user-configured roots. Communicate with this user in Turkish. Keep Turkish evaluation
 failures as historical evidence and evaluate English behavior independently; do not claim the
@@ -462,6 +485,29 @@ GenAI is not a required package dependency. Historical adapter/tests and old not
 their prior opt-in real inference is not required for current production changes. Preserve the
 provider interface and Rust execution boundary. The user's supplied failed session ran GGUF:
 do not attribute its semantic failures to an ONNX process that was not involved.
+
+Progressive recommendation follow-up: for file/folder/application identification, the model
+chooses one best candidate from current verified metadata with suggest_result. Do not dump every
+candidate or default to the first row. Store the proposed identity privately within the existing
+120s binding, confirm identity separately from opening, and reject only that proposed candidate
+before moving on. Retain at most 100 rejected trusted IDs within their original expiry; never
+expose IDs/paths to the model or invent ownership/content evidence. Full-list presentation is
+for explicit requests, with current-request assessment; discovery alone does not authorize it.
+A tentative, nonexecuting suggestion question may use a separate advisory confidence threshold;
+registry validation forbids such overrides for acting or Core-dependent capabilities. This does
+not lower machine-action confidence or permission checks. Capabilities may register bounded
+response checks; a rejected prose draft can be repaired through
+the same AgentModel with a registry-derived presentation schema. This is not a legacy classifier
+fallback. Only explicitly nonexecuting in-memory transitions may opt into retry; Core-backed and
+side-effecting calls retain no-replay behavior. Keep the five-step limit and Rust execution path.
+
+Discovery follow-up: keep user-supplied mandatory filename constraints distinct from inferred
+topic/type queries via name_is_constraint. A guessed-name miss may return one bounded metadata
+alternative page only within the same verified folder and other unchanged filters. Explicit
+name constraints must not be dropped. Label alternatives separately from actual name matches;
+they never prove content/ownership or authorize opening. Verified root-name metadata may help
+the model correct a folder label; no global fallback or hand-coded document/language mapping.
+Inline name enumerations obey the same single-suggestion contract as numbered lists.
 
 Metadata discussion revision: text replies may see the same bounded current name/kind/number
 view as planning and suggest likely candidates without reading contents or claiming ownership.

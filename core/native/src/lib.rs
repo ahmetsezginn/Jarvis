@@ -1,4 +1,5 @@
 pub mod apps;
+pub mod audio;
 pub mod audit;
 pub mod config;
 pub mod core;
@@ -56,6 +57,9 @@ pub fn build_executor_with_files(
         catalog,
     )))?;
     for tool in tools::files::FileCatalogTool::all(files) {
+        registry.register(tool)?;
+    }
+    for tool in tools::audio::AudioTool::all(audio::current_service()) {
         registry.register(tool)?;
     }
 

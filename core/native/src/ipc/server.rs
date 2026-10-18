@@ -414,6 +414,13 @@ mod tests {
                 "refresh_file_catalog",
                 "resolve_app",
                 "search_files",
+                "speech_cancel",
+                "speech_finish",
+                "speech_poll",
+                "speech_speak",
+                "speech_start",
+                "speech_status",
+                "speech_stop",
                 "system_status"
             ]
         );

@@ -219,7 +219,8 @@ def test_missing_explicit_folder_cannot_become_global_search(model):
     turn(brain, core, "Look for my rental agreement inside the RedArchive folder.")
     assert not brain._files._entries
     assert all(
-        c["tool"] == "search_files" and c["arguments"].get("kind") == "directory"
+        c["tool"] == "file_catalog_status"
+        or (c["tool"] == "search_files" and c["arguments"].get("kind") == "directory")
         for c in core.calls
     )
 
@@ -371,3 +372,28 @@ def reported_runtime(model):
         for id_, name in REPORTED_DOCUMENTS
     )
     return brain, core
+
+
+@pytest.mark.parametrize(
+    "text,allowed",
+    [
+        ("Could you open the file?", False),
+        ("Could you open the file with WriterPro?", True),
+    ],
+)
+def test_current_action_assessment_distinguishes_requested_and_inferred_app(model, text, allowed):
+    assessment = model.authorize_action(
+        text,
+        {
+            "operation": "Open the selected file",
+            "parameters": {"number": 1, "application": "WriterPro"},
+            "target": {
+                "number": 1,
+                "name": "draft.odt",
+                "candidate_count": 1,
+                "binding": "unexpired_current_results",
+            },
+        },
+    )
+    print("App preference assessment:", text, assessment, flush=True)
+    assert assessment.authorized is allowed

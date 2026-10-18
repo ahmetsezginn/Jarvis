@@ -87,6 +87,7 @@ class FileSession:
         self._expires = 0.0
         self._pending = IntentName.OPEN_FILE
         self._page: tuple[str, dict] | None = None
+        self._page_info: dict = {}
         self._scope: dict | None = None
         self._scope_expires = 0.0
         self._application: str | None = None
@@ -96,6 +97,7 @@ class FileSession:
         self._entries = ()
         self._expires = 0.0
         self._page = None
+        self._page_info = {}
         self._application = None
         self._confirmation = None
 
@@ -532,6 +534,11 @@ class FileSession:
     ) -> BrainResponse:
         entries = self._validate_entries(data)
         self._entries = entries
+        self._page_info = {
+            "total": data["total"],
+            "offset": data.get("offset", 0),
+            "partial": bool(data.get("partial")),
+        }
         self._expires = self._clock() + 120
         self._pending = pending
         self._page = page if data.get("offset", 0) + len(entries) < data["total"] else None

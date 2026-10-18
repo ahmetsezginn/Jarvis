@@ -1,4 +1,5 @@
 pub mod apps;
+pub mod audio;
 pub mod files;
 mod registry;
 pub mod system;

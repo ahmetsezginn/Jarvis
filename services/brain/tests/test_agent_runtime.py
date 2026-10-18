@@ -54,7 +54,7 @@ def test_feedback_allows_query_revision_in_same_turn():
     model = Model(
         step("find_files", query="misspelling"),
         step("find_files", query="turnuva"),
-        step("answer", message="Tabloyu buldum."),
+        step("suggest_result", number=1),
     )
     brain = JarvisBrain(core, model)
     response = brain.handle_text("İndirdiğim yarışma tablosunu arıyorum")
@@ -65,7 +65,7 @@ def test_feedback_allows_query_revision_in_same_turn():
     assert events[1]["result"]["results"][0]["name"].endswith(".xlsx")
     assert "Downloads/" not in repr(model.snapshots)
     assert "entry_id" not in repr(model.snapshots)
-    assert "Downloads/" in response.message  # Paths are user-visible only.
+    assert "Downloads/" not in response.message  # No automatic full listing.
     assert "Downloads/" not in repr(brain._agent.memory.snapshot())
 
 
@@ -111,7 +111,7 @@ def test_proposed_opening_is_denied_then_model_can_explain_without_execution():
     model = Model(
         step("find_files", query="CV"),
         step("open_result", number=1),
-        step("answer", message="İki aday buldum; henüz açmadım."),
+        step("suggest_result", number=1),
     )
     brain = JarvisBrain(core, model)
     brain.handle_text("CV dosyasını bul")
@@ -232,7 +232,7 @@ def test_literal_address_cannot_become_global_search_or_different_row():
     core = SyntheticCore()
     model = Model(
         step("find_files", query="CV"),
-        step("answer", message="İki sonuç."),
+        step("suggest_result", number=2),
         step("find_files", query="2"),
     )
     brain = JarvisBrain(core, model)
@@ -246,7 +246,7 @@ def test_result_expiry_and_reset_remove_action_bindings():
     now = [0]
     core = SyntheticCore()
     files = FileSession(core, clock=lambda: now[0])
-    model = Model(step("find_files", query="CV"), step("answer", message="İki sonuç."))
+    model = Model(step("find_files", query="CV"), step("suggest_result", number=2))
     runtime = AgentRuntime(core, model, files=files, clock=lambda: now[0])
     runtime.handle("özgeçmişleri bul")
     core.calls.clear()
@@ -283,7 +283,9 @@ def test_missing_scope_does_not_fall_back_to_unscoped_search():
     registry = BuiltinCapabilities(core).registry()
     result = registry.get("find_files").handler({"query": "CV", "location": "missing"})
     assert result.data["error"] == "folder_not_found"
-    assert len(core.calls) == 1 and core.calls[0]["arguments"]["kind"] == "directory"
+    assert [call["tool"] for call in core.calls] == ["search_files", "file_catalog_status"]
+    assert core.calls[0]["arguments"]["kind"] == "directory"
+    assert result.data["known_catalog_roots"] == ["Masaüstü", "İndirilenler", "Belgeler"]
 
 
 @pytest.mark.parametrize(
@@ -343,6 +345,7 @@ def test_qwen35_native_parameters_remain_typed_and_pass_registry_validation():
     assert value.arguments == {
         "query": "not",
         "recursive": False,
+        "name_is_constraint": False,
         "location": "Masaüstü",
         "kind": "file",
         "sort": "name",
@@ -392,8 +395,10 @@ def test_english_presentation_preserves_unicode_names_and_private_binding():
     core = SyntheticCore()
     builtins = BuiltinCapabilities(core)
     page = builtins.find_files({"query": "üretim"})
-    assert "üretim-notu.txt" in page.display and "file" in page.display
-    assert "Desktop/Proje/" in page.display
+    assert not page.display
+    suggestion = builtins.recommendations.suggest({"number": 1})
+    assert "üretim-notu.txt" in suggestion.display
+    assert "Desktop/Proje/" in builtins.recommendations.items()[0]["location"]
     assert "Desktop/Proje/" not in repr(page.data)
     opened = builtins.open_result({"number": 1})
     assert opened.display == "Opened üretim-notu.txt."
@@ -600,7 +605,7 @@ def test_ambiguous_application_choice_uses_original_number_and_revalidates_id(ch
     core = Core()
     model = Model(
         step("open_app", query="Example"),
-        step("answer", message="Hangisini açayım?"),
+        step("suggest_result", number=2),
         authorized=True,
     )
     brain = JarvisBrain(core, model)
@@ -622,9 +627,9 @@ def test_unknown_filename_search_and_verified_depth_filters_survive_in_context()
     core = SyntheticCore()
     model = Model(
         step("find_files", location="Masaüstü", category="text"),
-        step("answer", message="İki metin dosyası."),
+        step("suggest_result", number=1),
         step("find_files", location="current", category="text", recursive=False),
-        step("answer", message="Doğrudan masaüstündeki metin dosyası."),
+        step("suggest_result", number=1),
     )
     brain = JarvisBrain(core, model)
     brain.handle_text("Masaüstündeki notumun adını hatırlamıyorum")
@@ -645,7 +650,7 @@ def test_verified_cross_turn_facts_keep_native_tool_roles_and_expire_without_cha
     files = FileSession(core, clock=lambda: now[0])
     model = Model(
         step("find_files", location="Masaüstü", category="text"),
-        step("answer", message="Eski serbest yorum."),
+        step("suggest_result", number=1),
         step("answer", message="Merhaba"),
         step("answer", message="Başka bir şey?"),
     )
@@ -657,6 +662,8 @@ def test_verified_cross_turn_facts_keep_native_tool_roles_and_expire_without_cha
     assert [m["role"] for m in messages] == [
         "system",
         "user",
+        "assistant",
+        "tool",
         "assistant",
         "tool",
         "assistant",
@@ -675,7 +682,7 @@ def test_only_three_verified_tool_observations_are_kept_across_the_memory_window
     outputs = [
         value
         for _ in range(4)
-        for value in (step("find_files", query="CV"), step("answer", message="İki sonuç."))
+        for value in (step("find_files", query="CV"), step("suggest_result", number=2))
     ]
     runtime = AgentRuntime(SyntheticCore(), Model(*outputs))
     for i in range(4):

@@ -22,6 +22,8 @@ class Observation:
     performed: bool = False
     terminal: bool = False
     confirmation: Callable[[], Observation] | None = None
+    retryable: bool = False
+    memory_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ class Capability:
     requires: tuple[str, ...] = ()
     authorization_view: Callable[[dict], dict] | None = None
     available: Callable[[], bool] | None = None
+    minimum_confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,7 @@ class CapabilityRegistry:
         self._tools: dict[str, Capability] = {}
         self._contexts = {}
         self._references = {}
+        self._response_checks = {}
         for capability in capabilities:
             self.register(capability)
 
@@ -80,6 +84,16 @@ class CapabilityRegistry:
                 and not callable(capability.authorization_view)
             )
             or (capability.available is not None and not callable(capability.available))
+            or (
+                capability.minimum_confidence is not None
+                and (
+                    capability.effect != "observe"
+                    or capability.requires
+                    or type(capability.minimum_confidence) not in (int, float)
+                    or not math.isfinite(capability.minimum_confidence)
+                    or not 0 <= capability.minimum_confidence <= 1
+                )
+            )
         ):
             raise ValueError("invalid or duplicate capability registration")
         # Validate the supported schema vocabulary at registration, not after inference.
@@ -94,6 +108,7 @@ class CapabilityRegistry:
             capability.requires,
             capability.authorization_view,
             capability.available,
+            capability.minimum_confidence,
         )
 
     def supported_by(self, core_tools):
@@ -103,7 +118,21 @@ class CapabilityRegistry:
         )
         registry._contexts = dict(self._contexts)
         registry._references = dict(self._references)
+        registry._response_checks = dict(self._response_checks)
         return registry
+
+    def register_response_check(self, name, check):
+        """Trusted capabilities may require structured presentation before a prose answer."""
+        if name in self._response_checks or not callable(check):
+            raise ValueError("invalid response check")
+        self._response_checks[name] = check
+
+    def response_feedback(self, message=""):
+        for check in self._response_checks.values():
+            feedback = check(message)
+            if feedback is not None:
+                return feedback
+        return None
 
     def register_reference(self, name, resolve):
         if name in self._references or not callable(resolve):

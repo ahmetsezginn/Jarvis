@@ -5,6 +5,10 @@ zincirini kaldırır. `JarvisBrain.handle_text` yalnızca yeni `AgentRuntime` ü
 Eski davranış `LegacyBrain` altında karşılaştırma içindir; hata durumunda ona dönüş yapılmaz.
 Bir dosya adı veya Türkçe cümle için yeni yönlendirme dalı eklenmedi.
 
+Güncel tek aday önerisi ve ret akışı: [RECOMMENDATIONS.md](RECOMMENDATIONS.md).
+Normal yanıt sesi ve bilinmeyen dosya adı takibi:
+[VOICE_AND_DISCOVERY_FOLLOWUP.md](VOICE_AND_DISCOVERY_FOLLOWUP.md).
+
 ## İşleyiş
 
 ```text

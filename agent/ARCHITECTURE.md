@@ -1,5 +1,64 @@
 # JARVIS Architecture
 
+## Current desktop/voice revision (2026-10-16)
+
+Latest normal-answer follow-up: asynchronous SAPI output remains busy until WaitUntilDone(0)
+reports the entire queue completed. RunningState=0 is waiting, not completion. speech_poll
+adds output_phase queued/speaking/idle and conservatively retains speaking=true while pending
+for older clients. Qt shows queued as processing and cannot rearm its automatic microphone
+until completion. The live QML test uses the real Send button, actual agent worker, Core and
+SAPI, observing the final rearm callback without opening a microphone. See
+[voice/discovery evidence](../docs/brain/VOICE_AND_DISCOVERY_FOLLOWUP.md).
+
+The user authorized Qt for the current host. `jarvis -Desktop` starts Qt Quick/QML with PySide6,
+replacing the earlier planned TypeScript UI for this delivery. Qt owns presentation only and
+spawns the fixed Python stdio session worker with bounded JSON messages. That worker retains
+one existing JarvisBrain session; it has no shell fallback. Explicit card selections bind to a
+fresh per-page token plus the existing 120-second private Core IDs. Old pages cannot select a
+new row with the same number. Detailed path cards, conversational text and speech presentation
+are separate. Model inference does not run in the GUI event loop.
+
+Speech device requests use JarvisCoreClient -> Named Pipe -> registered AudioTool validation ->
+policy -> AudioService -> Windows adapter. CPAL/WASAPI microphone streams and SAPI speech output
+belong to Rust threads. Whisper small is checksum-pinned, CPU-only, loaded on demand with no
+download. This native speech inference is a voice-layer implementation; Python retains task
+planning. Captured PCM never leaves bounded Rust memory, so this phase needs no bulk audio IPC.
+Only the final transcript crosses the existing control pipe and enters the same agent path as
+typed text. Partial transcription is never dispatched. Decoder diagnostics are disabled to avoid
+transcript logging; normal typed Core errors and audit remain active.
+
+Voice reliability follow-up: QML no longer forces English recognition during startup; Auto is
+bound to the controller, and explicit en/tr selection reaches the native decoder. speech_finish
+also returns the decoder's detected language. speech_status discovers installed SAPI plus
+OneCore voice tokens and speech-output devices inside the COM thread. speech_speak accepts
+only validated en/tr and an optional bounded output index; trusted tokens remain inside Rust.
+Missing voice/device errors do not silently select another language. Qt exposes independent
+recognition, pronunciation and output controls, route feedback and a fixed Test voice sentence.
+The product's English text behavior is unchanged. No registry writes, OS mixer changes, model
+download or cloud inference are added. Synthetic fixture WAVs are explicit developer outputs,
+not saved microphone recordings. See the current follow-up in DESKTOP_VOICE.md.
+
+Both push-to-talk and explicitly enabled automatic conversation are available. Automatic mode
+uses checksum-pinned Silero v6.2.0 GGML through the same native CPU whisper.cpp runtime (no ONNX).
+A bounded callback queue feeds a separate capture worker: no blocking mutex, VAD inference or IPC
+inside the audio callback. Typed CPAL Xrun/route/scheduling notices differ from fatal device errors;
+isolated xruns are tolerated, while queue loss or eight xruns reject the utterance. A rolling
+960ms model window and 800ms preroll preserve onset, two 100ms speech frames start listening,
+and 900ms silence ends a turn. A 30-second utterance limit discards incomplete speech. Idle
+listening can continue while the explicit mode is on, with bounded memory and a six-second
+client heartbeat lease; abandoned pending PCM is discarded, including completed turns.
+
+`speech_poll` is a validated registered Low-risk control/lease tool returning only phase, level,
+xrun count and actual SAPI running state. It exposes no PCM. Qt serializes voice control calls,
+discards stale capture/output callbacks and maps real states to three persistent animations:
+waiting orbit, input-level bars, speaking flow. Processing has its own visual state. Capture
+pauses during ASR/agent reasoning/speech; automatic rearm follows actual SAPI completion with a
+short echo tail delay. This is half duplex; acoustic echo cancellation, wake words and neural
+Kokoro output remain unimplemented. Manual hold-to-talk can interrupt output. Cancelled or
+expired recordings never become agent input; hitting the manual deadline cancels rather than
+sending a clipped command. See [desktop setup](../services/desktop/README.md) and
+[verification](../docs/brain/DESKTOP_VOICE.md).
+
 ## Current production revision: capability agent loop (2026-10-16)
 
 `JarvisBrain.handle_text` now runs a bounded `AgentRuntime`, not the historical classifier/TurnPlan
@@ -24,6 +83,43 @@ are preserved. Parameter schemas document defaults/limitations and validate decl
 free text is an explicit field format, not a special field name. Cross-turn verified observations
 retain native assistant-tool-call/tool-result roles with their originating conversation turn,
 within the existing TTL and memory bounds; rendered filesystem paths never enter model history.
+
+Identification now uses progressive recommendations. The model ranks current name/kind/number
+metadata and calls suggest_result for one candidate; it never supplies a path/ID. A private
+Recommendations context retains the proposed identity and up to 100 rejected IDs until their
+original 120s expiry. reject_suggestion removes only that item; subsequent searches include its
+trusted exclusion ID automatically. confirm_suggestion confirms file identity without opening. An already-requested application
+opening keeps its separate pending-action binding; affirmative target selection can complete
+that original request through normal assessment and fresh Core resolution.
+show_results exposes the full remaining page only after current-request assessment of an explicit
+list/alternatives request. Original numbers stay stable, and desktop selection requires membership
+in the actually visible cards plus a fresh page token.
+
+A generic registry response-check hook prevents a raw prose draft from bypassing the structured
+presentation choice after discovery. If needed, AgentModel repairs that same next-step decision
+using a schema restricted to registered presentation actions; the model still chooses the item.
+Capability contexts refresh after every observation. Prose enumerations of known candidates
+cannot silently expand a single-card presentation; ordinary prose comparisons remain allowed.
+Tentative suggest_result questions have an advisory confidence threshold; registry validation
+forbids overriding the execution threshold for acting/Core-dependent capabilities. Correctable in-memory transition errors may
+explicitly allow retry; validation prohibits this flag for Core-backed/effectful/terminal calls.
+The five-step budget, side-effect assessment and Rust policy remain. Qt/CLI share the contract;
+voice speaks the selected suggestion and no longer replaces it with a page-count summary.
+Inline comma/semicolon enumerations of actual names also obey this presentation contract;
+ordinary prose comparisons remain allowed.
+Explicit full lists use typed original numbers/names for speech and separate locations for CLI/UI;
+partial/scope notices remain visible, and the model name budget does not hide full-page UI cards.
+See [recommendation behavior and checks](../docs/brain/RECOMMENDATIONS.md).
+
+Discovery now distinguishes name_is_constraint (user-supplied mandatory saved name) from a
+model-inferred name/topic hypothesis. On a hypothesis miss, one bounded metadata query may
+retrieve alternatives inside the same verified folder, preserving kind/type/extension,
+recursive, sorting and rejected IDs. It cannot widen to global roots or open anything. Tool
+evidence explicitly separates original_name_matches=0 from same-scope alternatives; the model
+chooses a tentative candidate, never a Python filename/type keyword branch. A mandatory name
+miss remains empty. Failed folder spelling can return verified catalog root names through
+file_catalog_status for the model to evaluate equivalence; find_files declares both Core
+dependencies. Five model steps, 20-row pages, original 120s bindings and Rust policy remain.
 
 `LegacyBrain` retains old diagnostics and historical tests only. It is not a production fallback.
 ONNX remains disabled. See [AGENT_LOOP.md](../docs/brain/AGENT_LOOP.md) for current model evaluation,

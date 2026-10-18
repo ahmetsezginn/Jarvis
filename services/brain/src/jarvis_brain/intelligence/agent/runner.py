@@ -154,16 +154,28 @@ class AgentRuntime:
         display = ""
         performed = False
         for _ in range(self.max_steps):
-            snapshot = {**initial, "turn_events": turn_events}
+            snapshot = {
+                **initial,
+                "capability_context": {
+                    name: safe_observation(view)
+                    for name, view in self.registry.context_views().items()
+                },
+                "turn_events": turn_events,
+            }
             raw = self.model.next_step(
                 copy.deepcopy(snapshot),
                 self.registry.descriptions(),
                 self.registry.schema(),
                 self.context,
             )
+            initial.pop("response_feedback", None)  # One decision, never a sticky routing mode.
             step = self.registry.parse(raw)
             self.trace.append({"step": step.action, "arguments": step.arguments})
             if step.action == "answer":
+                feedback = self.registry.response_feedback(step.arguments["message"])
+                if feedback is not None:
+                    initial["response_feedback"] = safe_observation(feedback)
+                    continue
                 message = step.arguments["message"]
                 return self._response(
                     text,
@@ -171,7 +183,13 @@ class AgentRuntime:
                     performed=performed,
                     memory_message=message,
                 )
-            if step.confidence < self.minimum_confidence:
+            capability = self.registry.get(step.action)
+            threshold = (
+                self.minimum_confidence
+                if capability.minimum_confidence is None
+                else capability.minimum_confidence
+            )
+            if step.confidence < threshold:
                 return self._response(
                     text,
                     "I could not understand the request confidently. Could you clarify?",
@@ -196,7 +214,6 @@ class AgentRuntime:
                     memory_message="The repeated tool step was stopped; another clue is needed.",
                 )
             seen.add(signature)
-            capability = self.registry.get(step.action)
             if capability.effect != "observe":
                 proposal = {"operation": capability.permission, "parameters": step.arguments}
                 if capability.authorization_view is not None:
@@ -234,6 +251,8 @@ class AgentRuntime:
                     )
                     continue
             observation = execute_capability(capability, step.arguments)
+            if observation.retryable:
+                seen.discard(signature)  # Only explicitly nonexecuting, in-memory transitions.
             safe = safe_observation(observation.data)
             turn_events.append({"action": step.action, "arguments": step.arguments, "result": safe})
             self._this_turn_events.append(
@@ -263,6 +282,7 @@ class AgentRuntime:
                     text,
                     display or "The operation was not completed.",
                     performed=observation.performed,
+                    memory_message=observation.memory_message,
                 )
         return self._response(
             text,

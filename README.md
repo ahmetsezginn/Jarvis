@@ -1,5 +1,14 @@
 # JARVIS
 
+Qt desktop and local voice are available with **`jarvis -Desktop`**. The terminal remains
+available through `jarvis`. Hold the microphone button and release to send, or enable **Auto
+conversation** for automatic speech detection with waiting/listening/speaking animations. Use
+result cards to open an item. Voice uses CPU Whisper small, local Silero GGML VAD and Windows SAPI.
+Discovery proposes one likely match first; reject it for another, or explicitly ask for all options.
+Automatic listening waits for queued speech to finish. Unknown-name discovery keeps a supplied
+folder and any mandatory saved-name constraint; it can suggest metadata alternatives within that folder.
+See [desktop setup and controls](services/desktop/README.md). No cloud speech service is required.
+
 To start from any directory with `jarvis`, register the command once in your Windows user PATH:
 
 ```powershell

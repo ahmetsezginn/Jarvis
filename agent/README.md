@@ -4,6 +4,13 @@ Project documents have one canonical location in this folder. The root AGENTS.md
 automatic-discovery entry point. Commands and source paths in these documents are relative to
 the repository root, unless explicitly stated otherwise.
 
+Current desktop/voice milestone: [DESKTOP_VOICE.md](../docs/brain/DESKTOP_VOICE.md), with setup at
+[services/desktop/README.md](../services/desktop/README.md). Launch with `jarvis -Desktop`.
+
+Progressive suggestions and rejection dialogue: [RECOMMENDATIONS.md](../docs/brain/RECOMMENDATIONS.md).
+Latest normal reply voice and unknown-filename discovery follow-up:
+[VOICE_AND_DISCOVERY_FOLLOWUP.md](../docs/brain/VOICE_AND_DISCOVERY_FOLLOWUP.md).
+
 Current architecture revision: [AGENT_LOOP.md](../docs/brain/AGENT_LOOP.md). Production now uses
 the capability/result feedback loop; older intent and TurnPlan reports are historical diagnostics.
 The active product language is English; original filenames retain Unicode. Current real-model
