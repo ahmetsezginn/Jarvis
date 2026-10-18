@@ -1,5 +1,99 @@
 # Handoff
 
+Latest pre-push review (2026-10-18): user reports voice somewhat improved, still needs work;
+requested repository/file-operation analysis and publishing the current update before choosing
+another task. See [PRE_PUSH_REVIEW_2026-10-18.md](../docs/brain/PRE_PUSH_REVIEW_2026-10-18.md).
+Found/reproduced a numbered-selection bug: an unsupported app override erased file bindings
+without any Core call. Pure app preflight now runs before consumption; original TTL preserved,
+valid effects still consume before IPC. Three regression tests failed before, pass after.
+Final ordinary Brain/Qt: 520 passed /175 skipped (4.40s); Rust: 97 passed /7 ignored. Ruff
+check/format (118 files), Rust fmt and all-target Clippy passed. Model/DLL/WAV/log exclusions
+verified; README setup/status/model directories corrected. Windows jarvis command targets this repo.
+Real 9B file review on synthetic metadata: 61 passed /3 failed,64 cases,686.54s. Baseline was
+loaded before the binding fix. Remaining semantic failures are Turkish Desktop scope omission,
+inferred Excel for default XLSX opening, and approval of an unrequested WriterPro override.
+Do NOT claim overall assistant/file acceptance; voice diagnostic failures remain documented.
+Fetched origin/main matched starting HEAD f0e05ed (0/0 ahead/behind). Delivery target main;
+use git log/status/remote state as authority for the final commit and push, not historical notes.
+
+LATEST correction/integration (2026-10-18): user wanted Handy's solution INSIDE JARVIS,
+not a standalone app. Windows Core now uses official pinned transcribe-cpp 0.2.4 bindings
+with checksum-provisioned CPU/Vulkan DLLs (NO ONNX), default turbo Q5 on a discovered dedicated
+GPU. Existing capture/Auto/Silero GGML/policy/pipe/SAPI stay in Rust; no Handy/clipboard/Python
+ASR or recordings. Session/model drops each utterance before Brain; verified file handle only
+is cached against write/delete races. Explicit legacy CPU choice remains; no silent fallback.
+Real TR/EN/Auto synthetic controls passed; actual 9B token generation -> three ASR utterances
+with 9B still loaded -> token generation passed at unchanged 32 GPU layers (peak7594MiB).
+97 ordinary Rust passed /7 ignored, 22 Qt passed /4 skipped, fmt/Clippy passed. Quality16
+still FAILS (4 critical,9/102 errors); personal microphone accuracy and old semantic failures
+are NOT accepted. Separate Handy and old project Core were stopped for deployment.
+See [NATIVE_SPEECH_PROVIDER.md](../docs/brain/NATIVE_SPEECH_PROVIDER.md) for setup/evidence.
+The standalone trial notes below are historical. No production recording permission implied.
+Deployed Core PID28784, real pipe status Q5/transcribe-cpp/RTX4070 Vulkan, model_available=true,
+recording=false; no ONNX DLL loaded. Final quality repeat retains 4/16 critical,9/102 errors
+(28.41s). Actual Auto VAD/endpoint path retains 4/6 critical failures (33.16s); no acceptance.
+
+Standalone Handy trial (2026-10-18): user chose option 1, then explicitly allowed the ready
+app's LOCAL WAV persistence, with no cloud. This is a trial-only exception, not production
+JARVIS recording permission. Signed/checksummed Handy 0.9.8 installed portable under
+.cache/handy-trial/app; existing pinned turbo hardlinked, no big model download. Turkish,
+RTX4070 Vulkan pinned, Earshot VAD, Ctrl+Alt+Space toggle, clipboard-only output, no auto-submit,
+no always-on mic/autostart/API post-processing/updater. App launched (latest PID22204).
+Computer Use listed its window; detailed capture approval timed out. Native app headless
+path verified. No personal mic started by agent. User microphone retest remains pending.
+Handy version uses transcribe-cpp 0.2.4 for Whisper, not transcribe-rs (ONNX alternatives).
+16 synthetic engine decodes: 4 critical failures, 9/102 errors; load 2.79s, first decode 12.89s,
+warm median 0.282s. This is speed evidence, NOT accuracy acceptance or VAD/mic validation.
+See [HANDY_TRIAL.md](../docs/brain/HANDY_TRIAL.md) for setup, limits, authorization and commands.
+Production providers/defaults unchanged; no commit/push in this follow-up.
+
+Latest user retest (2026-10-18): ASR remains inadequate on personal speech; new garbled
+recognized outputs are recorded in [ASR_QUALITY.md](../docs/brain/ASR_QUALITY.md). Original
+audio/verified reference text is unavailable. Historical synthetic improvements below do NOT
+establish user acceptance. User requested ready GitHub solutions with no external API.
+Researched Handy/transcribe-rs, faster-whisper, Qwen3-ASR and RealtimeSTT; report distinguishes
+runtime wrappers from different recognition models. This research installed/downloaded nothing
+and changed no production defaults. Native PCM boundary, no persistence and ONNX exclusion remain.
+
+Latest speech-input quality follow-up (2026-10-18): user CONFIRMED normal spoken replies work.
+Remaining complaint was ASR in Auto conversation: Steam request became an unrelated word,
+Jarvis became Javi. This work changes native recognition, not the Brain/file planner.
+
+Current default remains local CPU Whisper small, now beam_size=5 with bounded native catalog
+spelling context (assistant name plus current installed-app display names; no caller prompt,
+paths, IDs or transcript word-replacement). Native input route and RMS/peak/clipping diagnostics
+reach Qt. Low/clipped input is visible. A new noise control caught white noise producing a
+word: completed manual/Auto PCM now also passes the existing Silero speech model, preserving
+original samples without trimming. Silence and three noise amplitudes then passed (0.10s).
+No personal microphone capture, persistence, cloud ASR, ONNX or model training.
+
+Explicitly provisioned/pinned large-v3-turbo F16 and Q5 comparison models; neither is the
+default. Same 16 clean/noisy synthetic fixtures: old small/greedy 5 critical failures and
+12/102 word errors; selected small/beam/catalog hints 2 failures and 5/102 errors. F16 had
+4 failures/9 errors and Q5 2 failures/5 errors with much higher CPU latency. After final VAD
+gate, selected profile repeated 2 failures/5 errors in 89.73s; short Auto language subset
+6 decodes/2 failures in 65.16s. Both positive user examples passed clean/noisy in explicit
+Turkish and Auto. Remaining failures are the synthetic negative command's app name and noisy
+negation. Keep failing opt-in tests; this is NOT general ASR acceptance or microphone proof.
+
+Actual Auto rolling Silero -> TurnDetector/preroll/endpoint -> ASR simulation: positive cases
+4/4 passed; same two negative failures retained (61.86s). It did not reproduce clipping in
+these fixtures. Public real human JFK recording passed final VAD/ASR (17.56s). Personal-room
+and microphone quality remain for user retest. Listen=Türkçe reduces this host's short-clip
+decode time versus Auto without changing English agent replies or pronunciation selection.
+
+Final verification: 517 ordinary Brain/Qt passed /175 skipped (2.96s); 95 ordinary Rust passed
+/6 opt-in ignored. Ruff check/format (117 files), Rust fmt and all-target Clippy -D warnings
+passed. Windows linker transient output locks required serial retries and a fresh target/asr-verify
+directory; no ACL/security changes. Verified compiled binary hash when copying to the launcher
+path. Core restarted hidden as PID34456; status reports Whisper small CPU, model available,
+default Microphone Array (AMD Audio Device), recording=false. Reopen jarvis -Desktop to load UI.
+Observed HEAD f0e05ed (jarvis voice fixed); no commit/push by this agent in this follow-up.
+See [ASR_QUALITY.md](../docs/brain/ASR_QUALITY.md) for exact commands, pins, logs and limitations.
+Earlier file-discovery/default-app/authorization failures below remain unresolved.
+
+Previous normal-output follow-up:
+
 Latest normal-answer voice/discovery follow-up (2026-10-18): user heard Test voice but normal
 answers were silent; also reported a natural Turkish Desktop-note request failing. Audit found
 speech_start approximately 0.6s after speech_speak. SAPI RunningState=0 means queued, not done.

@@ -20,12 +20,34 @@ are separate. Model inference does not run in the GUI event loop.
 
 Speech device requests use JarvisCoreClient -> Named Pipe -> registered AudioTool validation ->
 policy -> AudioService -> Windows adapter. CPAL/WASAPI microphone streams and SAPI speech output
-belong to Rust threads. Whisper small is checksum-pinned, CPU-only, loaded on demand with no
-download. This native speech inference is a voice-layer implementation; Python retains task
+belong to Rust threads. Latest user correction requires Handy's solution inside JARVIS, not a
+separate app. Windows now uses pinned transcribe-cpp 0.2.4 via its official Rust bindings, a
+discovered dedicated Vulkan GPU, and pinned Whisper large-v3-turbo-q5_0 on this 8GB host.
+Model/session GPU weights are released after each utterance, before Brain reasoning. Only a
+verified file handle stays cached; Windows read sharing prevents writes/deletes while pinned.
+Explicit provisioning supplies hashed native DLLs, excluding ONNX, next to Core/test binaries.
+No Handy process/clipboard, inference server, download or microphone file recording is involved.
+Legacy whisper-cpp/small CPU, explicit transcribe-cpp CPU and other pinned model profiles remain
+developer choices; there is no silent provider/device/model fallback. Native catalog spelling
+context is preserved as a decoder prompt, not transcript replacement. This native speech
+inference is a voice-layer implementation; Python retains task
 planning. Captured PCM never leaves bounded Rust memory, so this phase needs no bulk audio IPC.
 Only the final transcript crosses the existing control pipe and enters the same agent path as
 typed text. Partial transcription is never dispatched. Decoder diagnostics are disabled to avoid
 transcript logging; normal typed Core errors and audit remain active.
+
+Recognition quality follow-up exposes the actual native input-device name/rate/channels and
+finite RMS/peak/clipping diagnostics, without PCM or automatic word replacement. These are
+signal measurements, not calibrated recognition confidence. The UI displays the selected
+route and low/clipped levels. Model/decoder comparisons use fixed synthetic fixtures only;
+they never dispatch transcriptions to the agent or establish personal microphone accuracy.
+After speech_finish validation/policy, the tool builds at most 64 names/512 characters of
+neutral spelling context from the native application catalog plus JARVIS. No paths, IDs,
+commands or caller prompt fields enter this context. Whisper uses it during decoding; there
+is no transcript replacement or new execution authority. See ASR_QUALITY.md for comparisons.
+Completed utterances also pass the existing CPU Silero VAD before Whisper in both input modes;
+energy alone cannot reject speech-like ASR hallucinations from noise. This gate keeps original
+PCM intact and requires at least 160ms of speech-model-positive frames. It does not trim words.
 
 Voice reliability follow-up: QML no longer forces English recognition during startup; Auto is
 bound to the controller, and explicit en/tr selection reaches the native decoder. speech_finish
@@ -76,6 +98,9 @@ Core remains the final authority: JarvisCoreClient -> Named Pipe -> registry -> 
 policy -> executor -> platform. Model IDs, paths and shell commands never establish authority.
 Side effects have an independent current-message/target/application assessment before dispatch.
 Bounded private file/app bindings and explicit confirmations remain outside model text.
+File selection validates an application override before consuming its private page binding.
+Unsupported overrides keep the original binding/expiry for a later valid request. A valid
+opening still consumes that binding before the first Core call; failed IPC is not replayed.
 
 The user-selected product language is now English. Presentation renders typed verified results,
 separately from archived Turkish messages. Original Unicode names and private catalog bindings

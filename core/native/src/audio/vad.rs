@@ -42,11 +42,112 @@ pub fn probability(model: &mut WhisperVadContext, window: &[f32]) -> Result<f32,
     Ok(tail.iter().sum::<f32>() / tail.len().max(1) as f32)
 }
 
+/// Energy alone is not speech. Gate completed manual AND automatic utterances;
+/// retain the original PCM, including pauses/negations, rather than trimming words.
+pub fn contains_speech(samples: &[f32]) -> Result<bool, JarvisError> {
+    let mut model = load()?;
+    model.detect_speech(samples).map_err(failure)?;
+    // Silero's 16 kHz frames contain 512 samples (32ms). Require at least 160ms
+    // of model-detected speech across this bounded utterance.
+    Ok(model
+        .probabilities()
+        .iter()
+        .filter(|&&p| p >= 0.5)
+        .take(5)
+        .count()
+        >= 5)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::audio::turn::TurnDetector;
     use std::collections::VecDeque;
+
+    #[test]
+    #[ignore = "explicit synthetic short utterances through real Auto VAD and ASR; no device"]
+    fn real_auto_turn_retains_short_utterances() {
+        let root = std::path::PathBuf::from(
+            std::env::var("JARVIS_ASR_EVAL").expect("Set quality fixture root"),
+        );
+        let cases: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(root.join("manifest.json")).unwrap()).unwrap();
+        let vocabulary = crate::audio::recognition_vocabulary(
+            [
+                "Steam", "Firefox", "Notepad", "Obsidian", "Spotify", "Chrome",
+            ]
+            .map(str::to_owned),
+        );
+        let mut failures = Vec::new();
+        for case in cases.as_array().unwrap().iter().take(3) {
+            let wav = std::fs::read(root.join(case["file"].as_str().unwrap())).unwrap();
+            let mut offset = 12;
+            let mut original = Vec::new();
+            while offset + 8 <= wav.len() {
+                let length =
+                    u32::from_le_bytes(wav[offset + 4..offset + 8].try_into().unwrap()) as usize;
+                if &wav[offset..offset + 4] == b"data" {
+                    original.extend(
+                        wav[offset + 8..offset + 8 + length]
+                            .chunks_exact(2)
+                            .map(|x| i16::from_le_bytes([x[0], x[1]]) as f32 / 32768.),
+                    );
+                }
+                offset += 8 + length + length % 2;
+            }
+            for noisy in [false, true] {
+                let mut random = 1949_u32;
+                let pcm: Vec<_> = original
+                    .iter()
+                    .map(|sample| {
+                        if !noisy {
+                            return *sample;
+                        }
+                        random = random.wrapping_mul(1664525).wrapping_add(1013904223);
+                        sample * 0.12 + (random as f32 / u32::MAX as f32 * 2. - 1.) * 0.003
+                    })
+                    .collect();
+                let mut model = load().unwrap();
+                let mut window = VecDeque::new();
+                let mut turn = TurnDetector::default();
+                for chunk in pcm
+                    .chunks(1600)
+                    .chain(std::iter::repeat_n(&[0.; 1600][..], 20))
+                {
+                    let mut frame = [0.; 1600];
+                    frame[..chunk.len()].copy_from_slice(chunk);
+                    window.extend(frame);
+                    while window.len() > 15360 {
+                        window.pop_front();
+                    }
+                    let score = probability(&mut model, window.make_contiguous()).unwrap();
+                    turn.push(&frame, score >= 0.5);
+                    if turn.complete {
+                        break;
+                    }
+                }
+                assert!(turn.complete && !turn.truncated, "No completed Auto turn");
+                let text =
+                    crate::audio::transcribe_with_vocabulary(&turn.samples, "auto", &vocabulary)
+                        .unwrap();
+                let normalized = text.to_lowercase();
+                let good = case["keywords"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|word| normalized.contains(word.as_str().unwrap()));
+                println!(
+                    "Auto fixture {} noisy={noisy} duration_ms={} matched={good}: {text}",
+                    case["file"],
+                    turn.samples.len() * 1000 / 16000
+                );
+                if !good {
+                    failures.push(format!("{} noisy={noisy}: {text}", case["file"]));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
 
     #[test]
     #[ignore = "explicit pinned VAD inference on public speech and synthetic noise"]

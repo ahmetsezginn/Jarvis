@@ -388,6 +388,31 @@ def test_selected_recognition_language_is_used_for_the_entire_final_transcript(a
     assert value.recognitionNote == "Last recognition: tr"
 
 
+def test_actual_input_route_and_signal_are_visible_without_rewriting_transcript(app):
+    value, calls, sent = controller(app)
+    value.startVoice(1)
+    calls[-1][2](
+        {
+            "recording_id": "turn",
+            "input": {"name": "Microphone Array", "sample_rate": 48000, "channels": 2},
+        },
+        None,
+    )
+    assert value.inputNote == "Input: Microphone Array"
+    value.finishVoice()
+    calls[-1][2](
+        {
+            "text": "Merhaba Javi",
+            "language": "tr",
+            "signal": {"valid": True, "rms_dbfs": -48.0, "clipped_fraction": 0.0},
+        },
+        None,
+    )
+    assert "Low input level" in value.recognitionNote
+    # Signal diagnostics never guess or silently replace the user's recognized words.
+    assert sent == ["Merhaba Javi"]
+
+
 def test_qml_recognition_default_matches_controller_and_voice_errors_are_visible(app):
     from PySide6.QtCore import QObject
 

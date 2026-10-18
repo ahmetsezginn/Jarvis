@@ -456,6 +456,38 @@ Normal spoken replies must not be interrupted by automatic rearm during pending 
 use full SAPI queue completion, not only its instantaneous active-speaking flag. Test the real
 QML/agent/normal-response path, not just a fixed test sentence or fabricated worker event.
 
+Speech-recognition quality follow-up (2026-10-18): user confirmed normal TTS works, but reported
+Steam -> unrelated word and Jarvis -> Javi. Compare checksum-pinned Whisper small and
+large-v3-turbo locally through the existing native CPU runtime; explicit setup may provision
+the pinned GGML artifact, never startup/download-on-demand. Keep GPU memory for the agent.
+Measure word/negation errors and latency on identical clean/noisy fixtures; synthetic speech
+does not establish this user's microphone accuracy. Expose only bounded input-route/signal
+metadata, never PCM. No transcript word-replacement rules, sentence-specific prompts, saved
+microphone audio, cloud ASR or automatic actions from diagnostic transcriptions.
+The selected CPU default remains small with beam search and bounded native catalog spelling
+context. Only native catalog display names plus the assistant name may supply this context;
+callers/models cannot send ASR prompt fields. Completed PCM also passes local Silero VAD in
+both manual/automatic modes before Whisper, without trimming or rewriting words.
+
+Standalone ASR trial exception (2026-10-18): user selected ready Handy and explicitly allowed
+its LOCAL WAV recordings after being told the app always persists them; no cloud/API speech.
+This exception applies only to the isolated portable Handy trial described in HANDY_TRIAL.md.
+It does not authorize JARVIS production recording persistence, Python microphone ownership,
+ONNX restoration, or changing production ASR defaults. Diagnostic synthetic-file calls to the
+same release's native transcribe-cpp DLL are permitted; never dispatch results as agent actions.
+
+Latest correction (2026-10-18): user meant integration INTO JARVIS, not a separate Handy app.
+Windows production speech now uses pinned transcribe-cpp 0.2.4 (Handy's native engine), Vulkan
+on a discovered dedicated GPU and the pinned large-v3-turbo-q5_0 model for this 8GB host.
+This supersedes the CPU-only/small default above. Explicit whisper-cpp/small CPU comparison
+remains available; no silent provider/device/model fallback. Rust owns bounded PCM, existing
+Silero GGML VAD, policy and microphone. Do not invoke Handy, clipboard automation or Python ASR.
+Keep native GPU model/session lifetimes within one recognition call so weights are released
+before Brain reasoning; cache only a checksum-verified read handle denying writes/deletes.
+No production recordings/cloud/ONNX. The separate trial's local-WAV permission does not extend
+to production. Explicit setup provisions checksum-pinned native DLLs without ONNX; no runtime
+downloads. See NATIVE_SPEECH_PROVIDER.md for integration evidence and unresolved quality failures.
+
 Latest user preference: the JARVIS product interaction is English. Preserve Unicode file/folder
 names and user-configured roots. Communicate with this user in Turkish. Keep Turkish evaluation
 failures as historical evidence and evaluate English behavior independently; do not claim the

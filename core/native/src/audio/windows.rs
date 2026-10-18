@@ -23,6 +23,14 @@ struct Capture {
     stop: Sender<()>,
     result: Receiver<Result<(), JarvisError>>,
     samples: Arc<Mutex<Vec<f32>>>,
+    input: InputRoute,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct InputRoute {
+    name: String,
+    sample_rate: u32,
+    channels: usize,
 }
 struct Progress {
     phase: &'static str,
@@ -115,7 +123,12 @@ impl WindowsAudio {
 
 impl AudioService for WindowsAudio {
     fn status(&self) -> Result<Value, JarvisError> {
+        let profile = super::transcribe::profile()?;
         let host = cpal::default_host();
+        let default_input = host
+            .default_input_device()
+            .and_then(|d| d.description().ok())
+            .map(|d| d.name().to_owned());
         let devices: Vec<_> = host.input_devices().map_err(failure)?.take(32).enumerate().map(|(i,d)|
             json!({"index":i, "name":d.description().map(|x| x.name().to_owned()).unwrap_or_else(|_| "Microphone".into())})).collect();
         let recording = self
@@ -124,9 +137,9 @@ impl AudioService for WindowsAudio {
             .map_err(failure)?
             .as_ref()
             .is_some_and(|c| !c.done.load(Ordering::Acquire));
-        let mut status = json!({"devices":devices, "recording":recording,
-            "model_available":super::transcribe::model_path().is_file(),
-            "recognizer":"Whisper small / CPU", "speaker":"Windows local voice", "max_seconds":30});
+        let mut status = json!({"devices":devices, "default_input":default_input, "recording":recording,
+            "model_available":profile.path().is_file(),
+            "recognizer":super::transcribe::recognizer_label()?, "speaker":"Windows local voice", "max_seconds":30});
         let inventory = (|| -> Result<Value, JarvisError> {
             let (tx, rx) = mpsc::channel();
             self.speaker()?
@@ -147,7 +160,7 @@ impl AudioService for WindowsAudio {
     }
 
     fn start(&self, device: Option<usize>, automatic: bool) -> Result<Value, JarvisError> {
-        if !super::transcribe::model_path().is_file() {
+        if !super::transcribe::profile()?.path().is_file() {
             return Err(failure("Provision the local Whisper model first"));
         }
         let mut slot = self.capture.lock().map_err(failure)?;
@@ -226,7 +239,7 @@ impl AudioService for WindowsAudio {
                 }
             })
             .map_err(failure)?;
-        ready_rx
+        let input = ready_rx
             .recv_timeout(Duration::from_secs(10))
             .map_err(failure)??;
         let id = uuid::Uuid::new_v4().to_string();
@@ -237,8 +250,9 @@ impl AudioService for WindowsAudio {
             stop: stop_tx,
             result: result_rx,
             samples,
+            input: input.clone(),
         });
-        Ok(json!({"recording_id":id, "max_seconds":30}))
+        Ok(json!({"recording_id":id, "max_seconds":30, "input":input}))
     }
 
     fn poll(&self, id: Option<&str>) -> Result<Value, JarvisError> {
@@ -270,7 +284,7 @@ impl AudioService for WindowsAudio {
         Ok(output)
     }
 
-    fn finish(&self, id: &str, language: &str) -> Result<Value, JarvisError> {
+    fn finish(&self, id: &str, language: &str, vocabulary: &str) -> Result<Value, JarvisError> {
         let capture = self.take(id)?;
         let _ = capture.stop.send(());
         capture
@@ -285,9 +299,12 @@ impl AudioService for WindowsAudio {
         }
         let pcm = std::mem::take(&mut *capture.samples.lock().map_err(failure)?);
         let duration_ms = pcm.len() * 1000 / 16000;
-        let (text, detected) = super::transcribe::recognize(&pcm, language)?;
+        let signal = super::transcribe::signal_stats(&pcm);
+        let (text, detected) = super::transcribe::recognize(&pcm, language, vocabulary)?;
         Ok(
-            json!({"text":text, "language":detected, "duration_ms":duration_ms, "engine":"whisper-small-cpu"}),
+            json!({"text":text, "language":detected, "duration_ms":duration_ms,
+                "engine":super::transcribe::recognizer_label()?,
+                "input":capture.input, "signal":signal}),
         )
     }
     fn cancel(&self, id: &str) -> Result<Value, JarvisError> {
@@ -360,7 +377,7 @@ fn capture(
     device: Option<usize>,
     automatic: bool,
     stop: &Receiver<()>,
-    ready: mpsc::SyncSender<Result<(), JarvisError>>,
+    ready: mpsc::SyncSender<Result<InputRoute, JarvisError>>,
     progress: Arc<Mutex<Progress>>,
 ) -> Result<Vec<f32>, JarvisError> {
     let start = || -> Result<_, JarvisError> {
@@ -373,6 +390,11 @@ fn capture(
         let config = device.default_input_config().map_err(failure)?;
         let rate = config.sample_rate();
         let channels = usize::from(config.channels());
+        let input_route = InputRoute {
+            name: device.description().map_err(failure)?.name().to_owned(),
+            sample_rate: rate,
+            channels,
+        };
         if !(8000..=192000).contains(&rate) || channels == 0 || channels > 8 {
             return Err(failure("Unsupported microphone format"));
         }
@@ -422,12 +444,21 @@ fn capture(
         }?;
         let detector = if automatic { Some(vad::load()?) } else { None };
         stream.play().map_err(failure)?;
-        Ok((stream, rx, errors_rx, xruns, dropped, rate, detector))
+        Ok((
+            stream,
+            rx,
+            errors_rx,
+            xruns,
+            dropped,
+            rate,
+            detector,
+            input_route,
+        ))
     };
     let (stream, rx, errors, xruns, dropped, rate, mut detector) = match start() {
-        Ok(value) => {
-            let _ = ready.send(Ok(()));
-            value
+        Ok((stream, rx, errors, xruns, dropped, rate, detector, input)) => {
+            let _ = ready.send(Ok(input));
+            (stream, rx, errors, xruns, dropped, rate, detector)
         }
         Err(error) => {
             let _ = ready.send(Err(error.clone()));

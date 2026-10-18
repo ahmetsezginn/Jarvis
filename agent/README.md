@@ -11,6 +11,18 @@ Progressive suggestions and rejection dialogue: [RECOMMENDATIONS.md](../docs/bra
 Latest normal reply voice and unknown-filename discovery follow-up:
 [VOICE_AND_DISCOVERY_FOLLOWUP.md](../docs/brain/VOICE_AND_DISCOVERY_FOLLOWUP.md).
 
+Speech-input quality comparisons, failed personal retest, offline alternatives and signal diagnostics:
+[ASR_QUALITY.md](../docs/brain/ASR_QUALITY.md).
+
+Standalone Handy 0.9.8 trial, local-recording authorization and first performance evidence:
+[HANDY_TRIAL.md](../docs/brain/HANDY_TRIAL.md).
+
+Latest correction: Handy's native engine integrated directly into JARVIS Rust Core:
+[NATIVE_SPEECH_PROVIDER.md](../docs/brain/NATIVE_SPEECH_PROVIDER.md).
+
+Latest repository/file-operation review and publication checks:
+[PRE_PUSH_REVIEW_2026-10-18.md](../docs/brain/PRE_PUSH_REVIEW_2026-10-18.md).
+
 Current architecture revision: [AGENT_LOOP.md](../docs/brain/AGENT_LOOP.md). Production now uses
 the capability/result feedback loop; older intent and TurnPlan reports are historical diagnostics.
 The active product language is English; original filenames retain Unicode. Current real-model

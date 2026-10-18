@@ -54,12 +54,12 @@ pub fn build_executor_with_files(
     registry.register(Arc::new(OpenAppTool::new(catalog.clone())))?;
     registry.register(Arc::new(tools::files::OpenFileWithAppTool::new(
         files.clone(),
-        catalog,
+        catalog.clone(),
     )))?;
     for tool in tools::files::FileCatalogTool::all(files) {
         registry.register(tool)?;
     }
-    for tool in tools::audio::AudioTool::all(audio::current_service()) {
+    for tool in tools::audio::AudioTool::all(audio::current_service(), Some(catalog)) {
         registry.register(tool)?;
     }
 

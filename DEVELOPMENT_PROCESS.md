@@ -2,6 +2,10 @@
 
 This document tracks the technical development sequence of JARVIS.
 
+Current Windows native build requires explicit speech-runtime provisioning before Cargo:
+`scripts/models/provision_transcribe.ps1` prepares the pinned transcribe.cpp prebuilt prefix.
+See [native speech setup](docs/brain/NATIVE_SPEECH_PROVIDER.md). Builds and startup never download it.
+
 `README.md` is reserved for introducing the project: what JARVIS is, why it exists, its product vision, and how the overall system is positioned.
 
 This file is the engineering process / milestone document.

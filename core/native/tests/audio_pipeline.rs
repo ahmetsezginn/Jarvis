@@ -15,7 +15,11 @@ use std::sync::{
 };
 
 #[derive(Default)]
-struct FakeAudio(AtomicUsize, Mutex<Option<(String, String, Option<usize>)>>);
+struct FakeAudio(
+    AtomicUsize,
+    Mutex<Option<(String, String, Option<usize>)>>,
+    Mutex<Option<String>>,
+);
 impl FakeAudio {
     fn response(&self) -> Result<Value, JarvisError> {
         self.0.fetch_add(1, Ordering::SeqCst);
@@ -32,7 +36,8 @@ impl AudioService for FakeAudio {
     fn poll(&self, _: Option<&str>) -> Result<Value, JarvisError> {
         self.response()
     }
-    fn finish(&self, _: &str, _: &str) -> Result<Value, JarvisError> {
+    fn finish(&self, _: &str, _: &str, vocabulary: &str) -> Result<Value, JarvisError> {
+        *self.2.lock().unwrap() = Some(vocabulary.to_owned());
         self.response()
     }
     fn cancel(&self, _: &str) -> Result<Value, JarvisError> {
@@ -61,7 +66,7 @@ impl PolicyEngine for Deny {
 }
 fn executor(audio: Arc<FakeAudio>, policy: Arc<dyn PolicyEngine>) -> Executor {
     let mut registry = ToolRegistry::new();
-    for tool in AudioTool::all(audio) {
+    for tool in AudioTool::all(audio, None) {
         registry.register(tool).unwrap();
     }
     Executor::new(
@@ -82,6 +87,10 @@ fn malformed_voice_requests_and_paths_never_reach_devices() {
         ("speech_start", json!({"device_index":32})),
         ("speech_start", json!({"path":"C:\\record.wav"})),
         ("speech_finish", json!({"recording_id":"fake"})),
+        (
+            "speech_finish",
+            json!({"recording_id":uuid::Uuid::new_v4().to_string(),"vocabulary":"caller hints forbidden"}),
+        ),
         (
             "speech_finish",
             json!({"recording_id":uuid::Uuid::new_v4().to_string(),"language":"shell"}),
@@ -159,6 +168,55 @@ fn voice_operations_use_the_normal_policy_boundary() {
 }
 
 #[test]
+fn recognition_spelling_context_comes_from_native_catalog_after_policy() {
+    use jarvis_core::apps::{
+        ApplicationCatalog, ApplicationSource, DiscoveredApplication, TrustedLaunchTarget,
+        fake::FakeApplicationDiscovery,
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("fixture.exe");
+    std::fs::write(&path, b"fixture").unwrap();
+    let app = DiscoveredApplication::new(
+        ApplicationSource::AdministrativeOverride,
+        "fixture",
+        "Nebula Painter",
+        Vec::new(),
+        None,
+        TrustedLaunchTarget::Executable {
+            path,
+            arguments: Vec::new(),
+        },
+    )
+    .unwrap();
+    let catalog = Arc::new(ApplicationCatalog::new(
+        Arc::new(FakeApplicationDiscovery::succeeding(vec![app])),
+        jarvis_core::config::ApplicationPreferences::default(),
+    ));
+    catalog.refresh().unwrap();
+    let audio = Arc::new(FakeAudio::default());
+    let mut registry = ToolRegistry::new();
+    for tool in AudioTool::all(audio.clone(), Some(catalog)) {
+        registry.register(tool).unwrap();
+    }
+    let engine = Executor::new(
+        registry,
+        Arc::new(DefaultPolicyEngine),
+        Arc::new(MemoryAuditSink::default()),
+        Arc::new(FakeDesktopPlatform::default()),
+    );
+    let response = engine.execute(ToolRequest::new(
+        "speech_finish",
+        json!({"recording_id":uuid::Uuid::new_v4().to_string()}),
+        RequestSource::Brain,
+    ));
+    assert_eq!(response.status, ToolStatus::Success);
+    assert_eq!(
+        audio.2.lock().unwrap().as_deref(),
+        Some("JARVIS, Nebula Painter")
+    );
+}
+
+#[test]
 #[ignore = "explicit local model inference with the public Whisper example WAV"]
 fn real_whisper_transcribes_public_fixture_without_device_access() {
     let path = std::env::var("JARVIS_SPEECH_FIXTURE").expect("Set the public fixture WAV path");
@@ -175,6 +233,24 @@ fn real_whisper_transcribes_public_fixture_without_device_access() {
         normalized.contains("ask not") && normalized.contains("country"),
         "{text}"
     );
+}
+
+#[test]
+#[ignore = "explicit native Handy-provider bilingual inference; synthetic fixtures, no microphone or agent"]
+fn real_handy_provider_transcribes_bilingual_and_auto_language() {
+    let root = std::path::PathBuf::from(std::env::var("JARVIS_ASR_EVAL").unwrap());
+    for (file, language, expected) in [
+        ("3.wav", "tr", "tabloyu"),
+        ("7.wav", "en", "spreadsheet"),
+        ("1.wav", "auto", "merhaba"),
+    ] {
+        let samples = read_fixture_pcm(&root.join(file));
+        let started = std::time::Instant::now();
+        let text =
+            jarvis_core::audio::transcribe_with_vocabulary(&samples, language, "JARVIS").unwrap();
+        println!("{language} {file} {:?}: {text}", started.elapsed());
+        assert!(text.to_lowercase().contains(expected), "{text}");
+    }
 }
 
 fn read_fixture_pcm(path: &std::path::Path) -> Vec<f32> {
@@ -253,4 +329,145 @@ fn real_whisper_bilingual_roundtrip_preserves_language_and_negative_commands() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "explicit model/decoder comparison on synthetic fixtures, never microphone or agent"]
+fn real_whisper_quality_comparison() {
+    let root =
+        std::path::PathBuf::from(std::env::var("JARVIS_ASR_EVAL").expect("Set fixture root"));
+    let cases: Value =
+        serde_json::from_slice(&std::fs::read(root.join("manifest.json")).unwrap()).unwrap();
+    let mut rows = Vec::new();
+    let mut failures = Vec::new();
+    for case in cases.as_array().unwrap() {
+        if let Ok(selection) = std::env::var("JARVIS_ASR_EVAL_FILES")
+            && !selection
+                .split(',')
+                .any(|file| Some(file) == case["file"].as_str())
+        {
+            continue;
+        }
+        let original = read_fixture_pcm(&root.join(case["file"].as_str().unwrap()));
+        for variant in ["clean", "quiet_noise"] {
+            let mut random = 1949_u32;
+            let samples: Vec<f32> = original
+                .iter()
+                .map(|sample| {
+                    if variant == "clean" {
+                        return *sample;
+                    }
+                    random = random.wrapping_mul(1664525).wrapping_add(1013904223);
+                    sample * 0.12 + (random as f32 / u32::MAX as f32 * 2.0 - 1.0) * 0.003
+                })
+                .collect();
+            let started = std::time::Instant::now();
+            let language = std::env::var("JARVIS_ASR_EVAL_LANGUAGE")
+                .unwrap_or_else(|_| case["language"].as_str().unwrap().into());
+            let vocabulary = if std::env::var("JARVIS_ASR_EVAL_HINTS").as_deref() == Ok("1") {
+                jarvis_core::audio::recognition_vocabulary(
+                    [
+                        "Steam", "Firefox", "Notepad", "Obsidian", "Spotify", "Chrome",
+                    ]
+                    .map(str::to_owned),
+                )
+            } else {
+                String::new()
+            };
+            let text =
+                jarvis_core::audio::transcribe_with_vocabulary(&samples, &language, &vocabulary)
+                    .unwrap();
+            let normalized = normalize_words(&text);
+            let missing: Vec<_> = case["keywords"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|word| {
+                    !format!(" {normalized} ")
+                        .contains(&format!(" {} ", normalize_words(word.as_str().unwrap())))
+                })
+                .cloned()
+                .collect();
+            if !missing.is_empty() {
+                failures.push(format!("{} {variant}: {text}", case["file"]));
+            }
+            let reference = normalize_words(case["text"].as_str().unwrap());
+            rows.push(
+                json!({"file":case["file"],"variant":variant,"language":language,
+                "text":text,"reference":case["text"],"missing":missing,
+                "word_errors":word_distance(&reference,&normalized),
+                "reference_words":reference.split_whitespace().count(),
+                "seconds":started.elapsed().as_secs_f64()}),
+            );
+            println!(
+                "ASR_PROGRESS {} {variant} {:.2}s",
+                case["file"],
+                started.elapsed().as_secs_f64()
+            );
+        }
+    }
+    assert!(!rows.is_empty(), "No evaluation cases selected");
+    println!(
+        "ASR_EVAL {}",
+        json!({"recognizer":jarvis_core::audio::recognizer_label().unwrap(),
+                "legacy_decoder_override":std::env::var("JARVIS_WHISPER_DECODER").ok(),
+                "hints":std::env::var("JARVIS_ASR_EVAL_HINTS").as_deref()==Ok("1"),"rows":rows})
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn normalize_words(text: &str) -> String {
+    text.to_lowercase()
+        .replace(['ı', 'İ'], "i")
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn word_distance(reference: &str, hypothesis: &str) -> usize {
+    let actual: Vec<_> = hypothesis.split_whitespace().collect();
+    let mut previous: Vec<usize> = (0..=actual.len()).collect();
+    for (row, expected) in reference.split_whitespace().enumerate() {
+        let mut current = vec![row + 1; actual.len() + 1];
+        for (column, observed) in actual.iter().enumerate() {
+            current[column + 1] = (current[column] + 1)
+                .min(previous[column + 1] + 1)
+                .min(previous[column] + usize::from(expected != *observed));
+        }
+        previous = current;
+    }
+    previous[actual.len()]
+}
+
+#[test]
+fn word_error_metric_counts_missing_negation_and_name_substitution() {
+    assert_eq!(word_distance("do not open steam", "do open steam"), 1);
+    assert_eq!(
+        word_distance("merhaba jarvis nasilsin", "merhaba javi nasilsin"),
+        1
+    );
+    assert_eq!(word_distance("", "invented words"), 2);
+}
+
+#[test]
+#[ignore = "explicit local ASR noise controls with spelling context; no device or agent"]
+fn real_whisper_spelling_context_does_not_create_words_from_noise() {
+    let vocabulary = jarvis_core::audio::recognition_vocabulary(
+        ["Nebula Painter", "Steam", "Firefox"].map(str::to_owned),
+    );
+    for amplitude in [0.0_f32, 0.001, 0.01, 0.1] {
+        let mut random = 1777_u32;
+        let noise: Vec<_> = (0..32000)
+            .map(|_| {
+                random = random.wrapping_mul(1664525).wrapping_add(1013904223);
+                (random as f32 / u32::MAX as f32 * 2.0 - 1.0) * amplitude
+            })
+            .collect();
+        let text =
+            jarvis_core::audio::transcribe_with_vocabulary(&noise, "tr", &vocabulary).unwrap();
+        assert!(text.is_empty(), "Noise {amplitude} created text: {text}");
+    }
 }

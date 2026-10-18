@@ -143,6 +143,12 @@ class FileSession:
         if action not in {"open", "list", "parent"}:
             raise ModelOutputInvalid("invalid displayed file operation")
         application = str(result.arguments["application"]) or None
+        if action == "open":
+            application, error = self._file_application(entry, application)
+            if error:
+                # No Core call or effect has occurred. Preserve identity and original TTL
+                # so a later valid request can still select the same displayed item.
+                return error
         self._clear_selection()  # Consume the exact current-page binding before any IPC.
         try:
             if action == "parent":
@@ -439,9 +445,12 @@ class FileSession:
             raise ModelOutputInvalid("Core did not confirm containing-folder opening")
         return self._reply(f"{data['entry']['name']} klasörü açıldı.", True)
 
-    def _open_with(self, entry: dict, application: str | None) -> BrainResponse:
+    def _file_application(
+        self, entry: dict, application: str | None
+    ) -> tuple[str | None, BrainResponse | None]:
+        """Validate an override without consuming bindings or calling Core."""
         if not application:
-            return self._open(entry)
+            return None, None
         application = {
             "chrome": "Google Chrome",
             "google chrome": "Google Chrome",
@@ -449,12 +458,20 @@ class FileSession:
             "microsoft edge": "Microsoft Edge",
         }.get(normalized(application), application)
         if application not in {"Google Chrome", "Microsoft Edge"}:
-            return self._reply(
+            return application, self._reply(
                 "Bu uygulamayla dosya açma henüz desteklenmiyor. "
                 "Uygulama belirtmeden dosyayı varsayılan uygulamayla açabilirsin."
             )
         if entry["kind"] != "file":
-            return self._reply("Uygulamayla açmak için bir dosya seç.")
+            return application, self._reply("Uygulamayla açmak için bir dosya seç.")
+        return application, None
+
+    def _open_with(self, entry: dict, application: str | None) -> BrainResponse:
+        application, error = self._file_application(entry, application)
+        if error:
+            return error
+        if not application:
+            return self._open(entry)
         resolved = self._call("resolve_app", {"query": application})
         app = resolved.get("app")
         if (

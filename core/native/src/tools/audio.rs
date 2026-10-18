@@ -21,9 +21,13 @@ struct Arguments {
 pub struct AudioTool {
     name: &'static str,
     audio: Arc<dyn AudioService>,
+    catalog: Option<Arc<crate::apps::ApplicationCatalog>>,
 }
 impl AudioTool {
-    pub fn all(audio: Arc<dyn AudioService>) -> Vec<Arc<dyn Tool>> {
+    pub fn all(
+        audio: Arc<dyn AudioService>,
+        catalog: Option<Arc<crate::apps::ApplicationCatalog>>,
+    ) -> Vec<Arc<dyn Tool>> {
         [
             "speech_status",
             "speech_poll",
@@ -38,6 +42,7 @@ impl AudioTool {
             Arc::new(Self {
                 name,
                 audio: audio.clone(),
+                catalog: catalog.clone(),
             }) as Arc<dyn Tool>
         })
         .collect()
@@ -127,6 +132,16 @@ impl Tool for AudioTool {
             "speech_finish" => self.audio.finish(
                 args.recording_id.as_deref().unwrap(),
                 args.language.as_deref().unwrap_or("auto"),
+                &crate::audio::recognition_vocabulary(self.catalog.as_ref().map_or_else(
+                    Vec::new,
+                    |catalog| {
+                        catalog
+                            .applications()
+                            .iter()
+                            .map(|app| app.canonical_name().to_owned())
+                            .collect()
+                    },
+                )),
             ),
             "speech_cancel" => self.audio.cancel(args.recording_id.as_deref().unwrap()),
             "speech_speak" => self.audio.speak(

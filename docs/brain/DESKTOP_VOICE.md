@@ -1,5 +1,14 @@
 # Qt masaüstü ve yerel ses — 2026-10-16
 
+Güncel Windows motoru [NATIVE_SPEECH_PROVIDER.md](NATIVE_SPEECH_PROVIDER.md) belgesindedir:
+Rust içinde transcribe.cpp ve pinli Turbo Q5 GPU profili. Kullanıcı entegrasyonun sesi biraz
+iyileştirdiğini doğruladı; tanıma doğruluğu hâlâ geliştirilmeli. Aşağıdaki CPU-small/Greedy
+açıklamaları tarihsel kilometre taşı kayıtlarıdır.
+
+18 Ekim: kullanıcı normal sesli yanıtın düzeldiğini doğruladı. Güncel mikrofon/ASR kalite
+çalışması ve farklı model/decoder ölçümleri [ASR_QUALITY.md](ASR_QUALITY.md) içindedir.
+Aşağıdaki Greedy/ilk ses testleri tarihsel sonuçlardır.
+
 Son normal yanıt/otomatik dönüş düzeltmesi ve gerçek QML/ajan testi:
 [VOICE_AND_DISCOVERY_FOLLOWUP.md](VOICE_AND_DISCOVERY_FOLLOWUP.md). Aşağıdaki ilk iki kısa
 sesin duyulması, normal ajan yanıtının otomatik modda kesilmediğini tek başına doğrulamıyordu.

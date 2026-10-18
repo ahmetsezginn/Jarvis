@@ -1,0 +1,29 @@
+{
+    "files":  {
+                  "ggml-cpu-cannonlake.dll":  "3a891b76a472d162a5eb9d79d16f48834d5f9bb7d994a3d98c8f62d3f73b7bfe",
+                  "ggml-cpu-sse42.dll":  "c86b3f16758f8acfda5796038814b7de532996d4b7448d33b8c0ee18605ee999",
+                  "ggml-cpu-skylakex.dll":  "edf8da77e34112b7c9f0efacd3ea0552080b4d6be8cd63199c82f92fc6e908f8",
+                  "msvcp140_2.dll":  "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838",
+                  "ggml-cpu-icelake.dll":  "fa74f31e1861bb6dc7fbe7a972a97885ade1a98128264c9b5948550af74828f6",
+                  "ggml-cpu-x64.dll":  "fe07715ac9a0ff5d27af9e089b0be74d257f2413119dcd9ae91e09ce0c9fb1c4",
+                  "vcruntime140_1.dll":  "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e",
+                  "ggml.dll":  "79fe7c80104fa5069aff71a84d7e9ad547ef9b94bdf3d6476514220f1accbf49",
+                  "vcruntime140_threads.dll":  "40f39e8cee5f5a531b4010e18b807e8fe265b908dc58f959ecb7ebc6ea6cb11a",
+                  "msvcp140_codecvt_ids.dll":  "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78",
+                  "transcribe.dll":  "765e4723dba20404b7ac7108998249599539cbd4ce93f2245b4ec6b2ff6a9a2a",
+                  "msvcp140.dll":  "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca",
+                  "msvcp140_1.dll":  "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982",
+                  "vcomp140.dll":  "95d4ce4a6802d1e18b5e0e1722cc30ea72ca7e033f83828f05c0b7b993fe7cbf",
+                  "ggml-cpu-alderlake.dll":  "c2b4efdaee77c73f6242a09475f2684b0279932c25400357ebc3bd4a2f1c7aad",
+                  "ggml-base.dll":  "c88419ca1c7e025629e239752acf9226fcc7bd898f5f66480d1202a215c4d507",
+                  "vcruntime140.dll":  "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7",
+                  "ggml-vulkan.dll":  "1f98e5c0e809a340c40f4057e9f73e0ac26ea32b5490e98327125798c8110728",
+                  "ggml-cpu-cascadelake.dll":  "7d9f6616ec7ff3f4ce7518b05632889aa0e8b6cf24f0d4153567532766bed5af",
+                  "ggml-cpu-haswell.dll":  "ff4e2f24f4ee446eb46328bdacd76010baa417ff4c189e8f7deedeb9fe61ac55",
+                  "ggml-cpu-sandybridge.dll":  "d21fab70996844b81c6e0344040b88a18ae2bbffcd2376077651f22fc405bd83",
+                  "msvcp140_atomic_wait.dll":  "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b"
+              },
+    "handy":  "0.9.8",
+    "transcribe_cpp":  "0.2.4",
+    "source":  "https://github.com/cjpais/Handy/releases/tag/v0.9.8"
+}

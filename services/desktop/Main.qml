@@ -258,7 +258,7 @@ ApplicationWindow {
                 }
             }
             Label {
-                Layout.fillWidth: true; text: jarvis.recognitionNote + "  ·  " + jarvis.outputNote; elide: Text.ElideRight
+                Layout.fillWidth: true; text: [jarvis.inputNote, jarvis.recognitionNote, jarvis.outputNote].filter(function(s) { return s.length > 0 }).join("  ·  "); wrapMode: Text.Wrap
                 color: "#667c96"; font.pixelSize: 10
             }
         }

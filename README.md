@@ -3,11 +3,16 @@
 Qt desktop and local voice are available with **`jarvis -Desktop`**. The terminal remains
 available through `jarvis`. Hold the microphone button and release to send, or enable **Auto
 conversation** for automatic speech detection with waiting/listening/speaking animations. Use
-result cards to open an item. Voice uses CPU Whisper small, local Silero GGML VAD and Windows SAPI.
+result cards to open an item. Voice uses Handy's native transcribe.cpp engine inside Rust,
+Whisper Turbo Q5 on the dedicated GPU, local Silero GGML VAD and Windows SAPI.
 Discovery proposes one likely match first; reject it for another, or explicitly ask for all options.
 Automatic listening waits for queued speech to finish. Unknown-name discovery keeps a supplied
 folder and any mandatory saved-name constraint; it can suggest metadata alternatives within that folder.
 See [desktop setup and controls](services/desktop/README.md). No cloud speech service is required.
+Recognition uses native catalog spelling context; it does not replace transcript
+words with application-name rules. Actual input route/level is visible in the desktop. See
+[ASR comparisons and remaining errors](docs/brain/ASR_QUALITY.md).
+Current integration/setup: [native speech provider](docs/brain/NATIVE_SPEECH_PROVIDER.md).
 
 To start from any directory with `jarvis`, register the command once in your Windows user PATH:
 
@@ -161,10 +166,13 @@ jarvis/
 
 ### Native core
 
-Build the Rust workspace from the repository root:
+Prepare the pinned Windows speech runtime, then build from the repository root. MSVC C++
+tools and the desktop CMake/libclang build packages are required; see
+[desktop setup](services/desktop/README.md#explicit-setup).
 
 ```powershell
-cargo build
+./scripts/models/provision_transcribe.ps1
+./scripts/shell/build-voice.ps1
 ```
 
 Start the local core service:
@@ -275,7 +283,10 @@ Run the Python checks from `services\brain`:
 
 ## Status
 
-JARVIS currently provides the secure native execution foundation and the local Python-to-Rust control bridge. Voice input, desktop UI, external AI providers, and broader tool coverage can be added without bypassing the same native policy boundary.
+JARVIS provides a local capability agent, Qt desktop, native speech input/output, installed-app
+discovery and scoped file/folder search, listing and opening through the Rust policy boundary.
+Files are searched by metadata in configured roots; document contents are not read. Semantic
+file-request and ASR acceptance still have documented failures; this is a development version.
 
 Interactive JARVIS responses now appear as readable messages. Add `--json` to the Brain
 `ask` or `repl` command for structured diagnostics; see [Brain CLI](services/brain/README.md).

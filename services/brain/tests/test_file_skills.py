@@ -309,6 +309,49 @@ def test_google_docs_unsupported_keeps_list_for_next_local_open():
     assert core.calls[-1] == ("open_file", {"entry_id": "tr"})
 
 
+@pytest.mark.parametrize("application", ["WriterPro", "Google Docs"])
+def test_numbered_unsupported_app_keeps_binding_for_default_open(application):
+    core = Core()
+    session = FileSession(core)
+    session.execute(IntentResult(IntentName.SEARCH_FILES, 1, {"query": "budget"}), "find budget")
+    core.calls.clear()
+    rejected = session.select_displayed(
+        IntentResult(
+            IntentName.SELECT_FILE,
+            1,
+            {"number": 2, "action": "open", "application": application},
+        )
+    )
+    assert not rejected.executed and not core.calls
+    assert session.accepts_number(2)
+    opened = session.select_displayed(
+        IntentResult(IntentName.SELECT_FILE, 1, {"number": 2, "action": "open", "application": ""})
+    )
+    assert opened.executed
+    assert core.calls == [("open_file", {"entry_id": "rust-file-2"})]
+    assert not session.accepts_number(2)
+
+
+def test_rejected_numbered_request_never_extends_binding_expiry():
+    now = [0.0]
+    core = Core()
+    session = FileSession(core, lambda: now[0])
+    session.execute(IntentResult(IntentName.SEARCH_FILES, 1, {"query": "budget"}), "find budget")
+    core.calls.clear()
+    now[0] = 110
+    session.select_displayed(
+        IntentResult(
+            IntentName.SELECT_FILE, 1, {"number": 1, "action": "open", "application": "WriterPro"}
+        )
+    )
+    assert session.accepts_number(1)
+    now[0] = 121
+    response = session.select_displayed(
+        IntentResult(IntentName.SELECT_FILE, 1, {"number": 1, "action": "open", "application": ""})
+    )
+    assert not response.executed and not core.calls
+
+
 def test_scope_and_confirmation_expiry_do_not_dispatch():
     core = Core()
     core.entries = cv_entries()[:2]

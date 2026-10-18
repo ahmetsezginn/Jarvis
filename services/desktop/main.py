@@ -77,6 +77,7 @@ class Controller(QObject):
         self._outputs = [{"index": -1, "name": "Default speech output"}]
         self._output_note = ""
         self._recognition_note = "Recognition: Auto"
+        self._input_note = ""
         self._epoch = 0
         self._page_token = ""
         self._scope_note = ""
@@ -152,6 +153,10 @@ class Controller(QObject):
     @Property(str, notify=changed)
     def recognitionNote(self):
         return self._recognition_note
+
+    @Property(str, notify=changed)
+    def inputNote(self):
+        return self._input_note
 
     @Property(str, notify=changed)
     def resultMode(self):
@@ -300,6 +305,9 @@ class Controller(QObject):
                 self.failure(error)
                 return
             self._recording_id = data["recording_id"]
+            route = data.get("input", {})
+            if route.get("name"):
+                self._input_note = f"Input: {route['name']}"
             self._voice_phase = "waiting" if self._automatic else "listening"
             self.state(
                 "Waiting for speech" if self._automatic else "Listening - release to send", True
@@ -400,6 +408,14 @@ class Controller(QObject):
             self._recognition_note = (
                 f"Last recognition: {language}" if language else "No clear speech detected"
             )
+            signal = data.get("signal", {})
+            if signal.get("valid"):
+                level = signal.get("rms_dbfs", -120)
+                self._recognition_note += f" · {level:.0f} dBFS"
+                if signal.get("clipped_fraction", 0) > 0.01:
+                    self._recognition_note += " · Input clipping"
+                elif level < -40:
+                    self._recognition_note += " · Low input level"
             self._voice_phase = "idle"
             self.state("Ready", False)
             if not text:
@@ -580,6 +596,9 @@ class Controller(QObject):
             "output_devices", []
         )
         self._output_note = default
+        self._recognition_note = data.get("recognizer", self._recognition_note)
+        if data.get("default_input"):
+            self._input_note = f"Default input: {data['default_input']}"
         if data.get("output_error"):
             self.message.emit("system", f"Voice output unavailable: {data['output_error']}")
         self.changed.emit()

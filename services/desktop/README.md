@@ -11,9 +11,12 @@ Qwen3.5-9B agent and session bindings. The fixed worker is a separate process so
 responsive. No HTTP server, account or cloud speech service is required.
 
 Type and press Enter (Shift+Enter adds a line). Hold **Hold to talk** while speaking and release
-to transcribe/send. Recognition uses multilingual Whisper small. **Listen** starts at Auto;
+to transcribe/send. Recognition uses multilingual Whisper Turbo Q5 through native transcribe.cpp with bounded
+spelling context from installed application names. Recognized words are never replaced by
+application-name rules. **Listen** starts at Auto;
 choose Türkçe or English explicitly for short utterances when automatic language detection is
-unreliable. The last detected recognition language appears below the controls.
+unreliable. The actual input-device name, last detected language and signal level appear below
+the controls. Low level or clipping is shown there; these diagnostics are not a confidence score.
 Choose an input device from the list, or leave the system default. A turn is limited to 30 seconds;
 hitting the limit discards the unfinished turn instead of sending it. **Cancel recording** or
 **Cancel transcription** discards that pending voice input. **Stop voice** stops output.
@@ -44,8 +47,9 @@ Result cards open the bound current item; old page tokens and expired bindings c
 different items. **New session** clears conversation and private result bindings.
 
 Current host profile: 32 GB system RAM and the existing 8 GB GPU/Qwen configuration. Whisper
-small runs on CPU with at most six threads; GPU capacity remains available to Qwen. The first
-speech request loads/verifies its model. No startup download occurs. This is the first local
+Turbo Q5 runs on the dedicated Vulkan GPU with at most six CPU threads. Its weights are released
+after recognition so the same GPU serves Qwen reasoning. The first speech request verifies the
+model and can take longer. No startup download occurs. This is the first local
 version: endpointing uses release in push-to-talk, or local CPU Silero GGML speech detection
 and silence in Auto conversation. No ONNX package or cloud speech is involved. Wake-word
 detection, full-duplex echo cancellation and neural Kokoro output are not included. TTS currently
@@ -56,6 +60,13 @@ actual output name appear below the controls. An unavailable language/device rep
 it does not silently use a different voice. Voice changes pronunciation, while response text
 retains the existing English agent behavior. This does not change Windows registry settings,
 system mixer volume, or other applications' audio preferences.
+
+ASR comparisons and remaining errors are recorded in [ASR_QUALITY.md](../../docs/brain/ASR_QUALITY.md).
+The current host default is transcribe-cpp / large-v3-turbo-q5_0 / dedicated GPU. Set
+`JARVIS_SPEECH_DEVICE=cpu` for explicit CPU use. For the historical small CPU provider set
+`JARVIS_SPEECH_ENGINE=whisper-cpp` and `JARVIS_WHISPER_PROFILE=small` before starting Core.
+`JARVIS_WHISPER_DECODER` applies only to that legacy provider. No silent fallback/download.
+See [native integration](../../docs/brain/NATIVE_SPEECH_PROVIDER.md) for actual tests and limits.
 Speech stops before recording begins to avoid feeding the assistant's voice into its own mic.
 
 ## Explicit setup
@@ -68,6 +79,7 @@ Install desktop packages separately; do not upgrade the Brain environment:
 python -m pip install --target services/desktop/.venv/Lib/site-packages -r services/desktop/requirements.txt
 python -m pip install --target services/desktop/.venv/Lib/site-packages -r services/desktop/requirements-build.txt
 python scripts/models/provision_speech.py
+./scripts/models/provision_transcribe.ps1
 ./scripts/shell/build-voice.ps1
 jarvis -Desktop
 ```
@@ -87,7 +99,7 @@ provided by the distributions; no Qt source changes or private font redistributi
 Qt requests microphone/speech operations only through `JarvisCoreClient`. Registered Rust tools
 validate input and pass policy/audit before touching CPAL/WASAPI or Windows SAPI. The microphone
 stream belongs to a Rust worker thread. Captured PCM remains in bounded Rust memory and never
-enters the JSON control channel. Recognition happens natively through whisper-rs/whisper.cpp;
+enters the JSON control channel. Recognition happens natively through transcribe-cpp Rust bindings;
 only final text crosses the pipe. The regular Python agent remains responsible for interpretation,
 planning and all user-requested computer tasks. Speech tools are not advertised to the model.
 
