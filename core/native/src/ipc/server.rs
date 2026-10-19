@@ -402,6 +402,10 @@ mod tests {
         assert_eq!(
             names,
             [
+                "desktop_attach",
+                "desktop_close",
+                "desktop_detach",
+                "desktop_poll",
                 "file_catalog_status",
                 "list_directory",
                 "open_app",
@@ -410,6 +414,10 @@ mod tests {
                 "open_file",
                 "open_file_with_app",
                 "open_folder",
+                "organizer_add",
+                "organizer_clock",
+                "organizer_list",
+                "organizer_update",
                 "refresh_app_catalog",
                 "refresh_file_catalog",
                 "resolve_app",

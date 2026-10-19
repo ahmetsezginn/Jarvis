@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from jarvis_brain.errors import CoreToolError, ModelOutputInvalid
+from jarvis_brain.intelligence.agent.desktop import DesktopCapabilities
+from jarvis_brain.intelligence.agent.organizer import OrganizerCapabilities
 from jarvis_brain.intelligence.agent.presentation import operation_failure
 from jarvis_brain.intelligence.agent.recommendations import Recommendations
 from jarvis_brain.intelligence.agent.registry import (
@@ -30,6 +32,7 @@ class BuiltinCapabilities:
         self.app_choices = SelectionSession(clock=self.files._clock)
         self.recommendations = Recommendations(self.files, self.app_choices)
         self._last_discovery = {}
+        self._registry = None
         self.clear_app_context()
 
     def registry(self):
@@ -287,6 +290,11 @@ class BuiltinCapabilities:
         )
         registry.register_response_check("recommendations", self.recommendations.answer_feedback)
         registry.register_reference("builtin_results", self.result_reference)
+        self._registry = registry
+        self.organizer = OrganizerCapabilities(self.core, clock=self.files._clock)
+        self.organizer.register(registry)
+        self.desktop = DesktopCapabilities(self.core)
+        self.desktop.register(registry)
         return registry
 
     def result_reference(self, text):
@@ -372,6 +380,8 @@ class BuiltinCapabilities:
         return matches[0], None
 
     def _page(self, response, data):
+        if self._registry is not None:
+            self._registry.activate_reference("builtin_results")
         self.recommendations.needs_presentation = bool(self.recommendations.remaining())
         return Observation(
             {
@@ -648,6 +658,8 @@ class BuiltinCapabilities:
         if response.executed:
             display = f"Opened {args['query']}."
         elif data.get("candidates"):
+            if self._registry is not None:
+                self._registry.activate_reference("builtin_results")
             display = ""
             self.recommendations.needs_presentation = True
         else:
@@ -783,6 +795,7 @@ def execute_capability(capability, arguments):
         or type(observation.performed) is not bool
         or type(observation.terminal) is not bool
         or type(observation.retryable) is not bool
+        or type(observation.conversation_display) is not bool
         or (
             observation.retryable
             and (

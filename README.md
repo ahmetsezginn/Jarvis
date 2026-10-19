@@ -5,6 +5,10 @@ available through `jarvis`. Hold the microphone button and release to send, or e
 conversation** for automatic speech detection with waiting/listening/speaking animations. Use
 result cards to open an item. Voice uses Handy's native transcribe.cpp engine inside Rust,
 Whisper Turbo Q5 on the dedicated GPU, local Silero GGML VAD and Windows SAPI.
+Closing JARVIS's window or dismissing it in chat now exits Qt and its Brain worker, releasing
+the language model. The previous integrated wake/tray resident was removed at the user's request.
+A [separate lightweight Windows wake process](docs/brain/WAKE_DAEMON_PLAN.md) is planned;
+it is not installed yet. Reopen manually with `jarvis -Desktop` for now.
 Discovery proposes one likely match first; reject it for another, or explicitly ask for all options.
 Automatic listening waits for queued speech to finish. Unknown-name discovery keeps a supplied
 folder and any mandatory saved-name constraint; it can suggest metadata alternatives within that folder.
@@ -13,6 +17,16 @@ Recognition uses native catalog spelling context; it does not replace transcript
 words with application-name rules. Actual input route/level is visible in the desktop. See
 [ASR comparisons and remaining errors](docs/brain/ASR_QUALITY.md).
 Current integration/setup: [native speech provider](docs/brain/NATIVE_SPEECH_PROVIDER.md).
+
+Personal tasks and notes are available in the same conversation (typed or spoken):
+“Add booking the dentist for tomorrow”, “What do I need to do today?”, “Mark that task
+as done”, or “Save a note: the spare key is in the blue drawer”. Tasks can be rescheduled,
+reopened or archived, and notes can be recalled later. Data stays in the current user's
+local JARVIS SQLite database across restarts. Dates use the computer's local calendar;
+timed alarms, recurring tasks and notifications are not included. See
+[personal organizer](docs/brain/PERSONAL_ORGANIZER.md) for behavior and validation.
+The later [adversarial review](docs/brain/PERSONAL_ORGANIZER_STRESS_2026-10-18.md) found
+wrong-target and wrong-date updates; general task-assistant acceptance remains failed.
 
 To start from any directory with `jarvis`, register the command once in your Windows user PATH:
 

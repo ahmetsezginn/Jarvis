@@ -9,7 +9,7 @@ use std::{
 use jarvis_core::{
     apps::{ApplicationCatalog, current_application_discovery},
     audit::TracingAuditSink,
-    build_executor_with_files,
+    build_executor_with_organizer,
     config::ApplicationPreferences,
     core::{JarvisError, RequestSource, ToolRequest, ToolStatus},
     executor::Executor,
@@ -45,13 +45,14 @@ fn run() -> Result<ExitCode, JarvisError> {
         preferences,
     ));
     let discovered = catalog.refresh()?;
-    let executor = Arc::new(build_executor_with_files(
+    let executor = Arc::new(build_executor_with_organizer(
         current_desktop_platform(),
         catalog.clone(),
         Arc::new(TracingAuditSink),
         Arc::new(jarvis_core::files::FileCatalog::new(
             jarvis_core::files::configured_roots()?,
         )?),
+        Arc::new(jarvis_core::organizer::Organizer::current_user()?),
     )?);
 
     match arguments.as_slice() {

@@ -36,6 +36,46 @@ def controller(app):
     return value, calls, sent
 
 
+def lifecycle(app):
+    from types import SimpleNamespace
+
+    spec = importlib.util.spec_from_file_location(
+        "jarvis_lifecycle", ROOT / "services/desktop/lifecycle.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    value, calls, sent = controller(app)
+    quits = []
+    control = module.DesktopLifecycle(
+        SimpleNamespace(quit=lambda: quits.append(True)), value, desktop.CoreCall
+    )
+    requests = []
+    control.core = lambda tool, args, callback: requests.append((tool, args, callback))
+    control.attached({"session": "fixture", "closing": False, "revision": 1}, None)
+    control.timer.stop()
+    return value, control, calls, sent, quits, requests
+
+
+def test_native_close_event_quits_once_and_prevents_late_voice_rearm(app):
+    value, control, calls, sent, quits, _requests = lifecycle(app)
+    value._automatic = True
+    control.apply({"closing": True, "revision": 2})
+    control.apply({"closing": True, "revision": 2})
+    control.apply({"closing": False, "revision": 1})
+    value.resume_automatic()
+    value.startVoice(-1)
+    assert quits == [True] and value._closing and not value.automatic
+    assert not calls and not sent
+
+
+def test_failed_desktop_poll_does_not_close_application_or_start_microphone(app):
+    value, control, calls, sent, quits, requests = lifecycle(app)
+    control.poll()
+    assert requests[-1][:2] == ("desktop_poll", {"session": "fixture"})
+    requests[-1][2](None, "Core disconnected")
+    assert not quits and not value._closing and not calls and not sent
+
+
 def test_fast_release_waits_for_microphone_then_submits_one_final_transcript(app):
     value, calls, sent = controller(app)
     value.startVoice(-1)

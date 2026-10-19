@@ -1,6 +1,8 @@
 pub mod apps;
 pub mod audio;
+pub mod desktop;
 pub mod files;
+pub mod organizer;
 mod registry;
 pub mod system;
 mod tool;

@@ -4,6 +4,16 @@ Project documents have one canonical location in this folder. The root AGENTS.md
 automatic-discovery entry point. Commands and source paths in these documents are relative to
 the repository root, unless explicitly stated otherwise.
 
+Independent Windows wake process: [WAKE_DAEMON_PLAN.md](../docs/brain/WAKE_DAEMON_PLAN.md)
+(PLANNING ONLY). The earlier integrated Core/Qt wake was removed. Desktop close now exits
+Qt and its Brain worker; current implementation notes: [DESKTOP_WAKE.md](../docs/brain/DESKTOP_WAKE.md).
+
+Current task/notes capability: [PERSONAL_ORGANIZER.md](../docs/brain/PERSONAL_ORGANIZER.md).
+Persistent native storage, daily agendas, completion/reopening, rescheduling and note recall;
+the same model-driven capability loop handles typed and spoken requests.
+Adversarial review supersedes the earlier bounded acceptance: [PERSONAL_ORGANIZER_STRESS_2026-10-18.md](../docs/brain/PERSONAL_ORGANIZER_STRESS_2026-10-18.md).
+Actual wrong-target and wrong-date writes were reproduced; overall task acceptance is FAILED.
+
 Current desktop/voice milestone: [DESKTOP_VOICE.md](../docs/brain/DESKTOP_VOICE.md), with setup at
 [services/desktop/README.md](../services/desktop/README.md). Launch with `jarvis -Desktop`.
 

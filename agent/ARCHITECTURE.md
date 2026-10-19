@@ -1,5 +1,61 @@
 # JARVIS Architecture
 
+## Desktop termination correction (2026-10-19)
+
+The user rejected the previous integrated-wake/tray-resident design. That runtime integration,
+wake ASR/capture helpers and shared audio gate have been removed. Qt window X exits normally.
+Conversational close requests a registered desktop_close tool; the native coordinator retains
+only an expiring private desktop UUID and a monotonic closing revision under a mutex. Four
+Low-risk tools (attach/poll/close/detach) use the normal Named Pipe/validation/policy/executor.
+A typed native closing event calls Qt quit; shutdown detaches and stops the fixed Brain worker,
+so the large model is released. No microphone, wake thread or tray resident belongs to lifecycle
+control. The existing ordinary push-to-talk/Auto/TTS implementation is unchanged.
+
+A parameterless acting capability can opt into a single semantic omission review before an
+answer. It may request registry-constrained replanning but grants no execution authority; normal
+current-request assessment/Core policy and the five-step budget remain mandatory.
+
+The future low-memory wake component is a separate Rust executable, not a Core module or a
+Qt/Python resident. Only the small detector runs while the assistant is closed; a fixed trusted
+native bootstrap starts the assistant on demand. No daemon, startup registration or detector
+has been implemented/installed in this correction. See
+[the proposed process/security/lifecycle plan](../docs/brain/WAKE_DAEMON_PLAN.md).
+
+## Personal organizer revision (2026-10-18)
+
+User-authorized tasks/notes are the first persistent personal-data capability bundle.
+`OrganizerCapabilities` registers semantic schemas/handlers/context through CapabilityRegistry;
+the provider-independent five-step agent loop remains shared with file/app abilities.
+Python retains only a private five-row/120-second selection, never owns the database.
+`JarvisCoreClient -> Named Pipe -> ToolRegistry -> validation -> policy -> executor ->
+OrganizerTool -> Organizer` is the only storage path. Native Core owns a versioned local
+SQLite database under the OS user data directory. SQL is fixed/parameterized; model text
+cannot select paths, SQL or record IDs. Typed arguments deny extra fields. Mutations use
+Core-returned IDs plus optimistic versions, and rejected policy calls never write.
+List/clock are ReadOnly; create/update are Low risk, current-request authorized and audited
+without personal text. Archive is reversible; no permanent deletion is exposed.
+
+Date-only tasks use the OS local calendar (Chrono); today/tomorrow resolve inside Rust.
+Today is an exact date, overdue and undated are separate filters. Notes have no due date or
+completed state. Transactions survive restart; newer/corrupt schemas fail without resetting
+user data. Merely registering tools or listing an uninitialized organizer creates no database.
+Production supplies a persistent Organizer to build_executor_with_organizer; library/test
+builders default to isolated in-memory stores. SQLite owns transactional disk writes and
+bounded busy waits; separate Core instances use version conflicts instead of lost updates.
+
+Reference focus is a generic capability-registry property: only the most recently displayed
+bundle owns literal list numbers. A personal bare number reads its record, never completes it.
+Updates preserve other current numbers and their original expiry; errors consume bindings
+before IPC and are never replayed. Model context contains bounded names/text/status/date,
+not record IDs. Saved text is untrusted data, never action permission. Same-title metadata
+is supplied to the current-request assessment so ambiguous edits can ask for identity.
+An Observation may opt its rendered display into conversation/voice presentation; Qt then
+uses the full response rather than the shorter model-memory acknowledgement and hides stale
+file cards when another bundle owns the page. Existing SAPI's 1024-character speech bound
+still applies. Conversation history remains session-only; /reset does not erase saved items.
+No background scheduler, alarm, cloud sync, external-plugin downloader or OS-file mutation
+is added. Details and current test evidence: PERSONAL_ORGANIZER.md.
+
 ## Current desktop/voice revision (2026-10-16)
 
 Latest normal-answer follow-up: asynchronous SAPI output remains busy until WaitUntilDone(0)

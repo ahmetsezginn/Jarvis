@@ -531,6 +531,10 @@ fn production_registry_contains_registered_application_and_file_tools() {
     assert_eq!(
         names,
         [
+            "desktop_attach",
+            "desktop_close",
+            "desktop_detach",
+            "desktop_poll",
             "file_catalog_status",
             "list_directory",
             "open_app",
@@ -539,6 +543,10 @@ fn production_registry_contains_registered_application_and_file_tools() {
             "open_file",
             "open_file_with_app",
             "open_folder",
+            "organizer_add",
+            "organizer_clock",
+            "organizer_list",
+            "organizer_update",
             "refresh_app_catalog",
             "refresh_file_catalog",
             "resolve_app",
@@ -557,6 +565,8 @@ fn production_registry_contains_registered_application_and_file_tools() {
         assert_eq!(
             tool.risk_level,
             if tool.name.starts_with("open_")
+                || tool.name.starts_with("desktop_")
+                || matches!(tool.name, "organizer_add" | "organizer_update")
                 || (tool.name.starts_with("speech_") && tool.name != "speech_status")
             {
                 RiskLevel::Low

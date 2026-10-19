@@ -1,5 +1,117 @@
 # Handoff
 
+LATEST user correction (2026-10-19): user rejected the embedded Core/Qt wake and tray-resident
+implementation. They meant an independent lightweight Windows listener that launches a CLOSED
+assistant, so the 9B model is not retained. Removed native wake module, CPU wake ASR helpers,
+shared audio gate, Qt tray/resident, hidden-window interception and wake-specific generator/tests.
+Normal native audio files and their tests restored byte-for-byte to pre-wake HEAD; source and
+live-Core checks confirm old desktop_hide/configure absent, desktop_close present, mic off.
+No existing desktop/main.py resident was running when checked. No Windows startup entry or
+SCM service was installed previously or now. The independent daemon is PLANNING ONLY.
+
+Retained conversational close, changed from hiding to TERMINATING Qt/Brain. Four native tools
+attach/poll/close/detach; coordinator now only an expiring UUID/closing revision in a mutex,
+no listener thread or audio. Qt quit invokes worker shutdown and releases the LLM process.
+Generic parameterless-effect omission review/normal dispatch authorization remain. Real
+Qt/QML + actual worker/local9B + actual Pipe/Core with exact Turkish close request PASSED:
+Qt event loop exited, worker NotRunning (target/desktop-close-live.log). No microphone used.
+Existing Core may remain shared, just as before; desktop never kills unrelated shared clients.
+Saved organizer data persists; session-only chat ends. Reopen manually with jarvis -Desktop.
+
+Ordinary Brain/Qt546 passed/202 skipped. Native110 passed/7 ignored. Ruff/format, cargo fmt
+and Clippy all targets passed.
+Corrected close capability real-model controls:10/10 passed in96.35s, including exact Turkish
+dismissal and Turkish/English prohibition/how-to/hypothetical/chat controls; log desktop-close-model.log.
+Logs target/wake-removal-{python,rust,clippy}.log. Copied validated
+Core and restarted only this project's process, PID37292 at correction, logs
+wake-removal-core.{stdout,stderr}.log. Earlier wake/model counts below and target/wake-*.log
+belong to the RETIRED design, not the future independent process. No commit/push.
+
+Plan: docs/brain/WAKE_DAEMON_PLAN.md. Separate Rust executable/crate, not a dependency on the
+large Core library; optional tiny shared IPC/installation types. While idle only small detector
+runs, no Qt/Python/GGUF/full ASR/GPU. First evaluate native PocketSphinx keyword spotting
+without opening apps, measure real RAM/CPU/latency/false wakes, then fixed trusted bootstrap,
+single-instance/process ownership/mic handoff, and LAST Windows user-logon registration.
+No new detector/models/startup integration implemented/installed in this correction. Existing
+ONNX/cloud/recording restrictions persist. Proposed memory/CPU numbers are acceptance targets,
+not measurements. SCM Session0 UI constraints and source links are in the plan.
+
+The original organizer adversarial failures below remain open and untouched.
+
+LATEST adversarial audit (2026-10-18): user explicitly requested pushing the task system/model
+hard. Production source/prompts/weights/policy were frozen; no production repair was attempted.
+See [PERSONAL_ORGANIZER_STRESS_2026-10-18.md](../docs/brain/PERSONAL_ORGANIZER_STRESS_2026-10-18.md).
+Real 9B + actual Rust registry/validation/policy/executor/SQLite through a test-only framed
+stdio ControlSession fixture, all stores canonicalized under target; no personal AppData
+read/write, OS app/file execution, microphone or cloud. Native fixture advertises the full
+registry but bans all non-organizer execution. Source fingerprint unchanged in all runs:
+c4918839b50aa0bc0368d7bd7f5c2dd0a6fde9c35f66256b526504710920219b.
+
+55 defined scenarios,59 executions with repeats/controls: main 37/47 passed (58 turns,121 model
+inferences,585.22s); focused 2/9; controls 2/3. ACCEPTANCE FAILED. Three P1 actual durable errors
+were each reproduced: ambiguous "Mark it done" chose a task from a four-row list; a same-name
+task hidden on the next page was ignored and the visible duplicate completed; "first day of
+next month" saved 2024-02-01 instead of 2026-11-01. Valid UUID/version/Low policy do not prove
+intended identity/date. Current-request assessment approved these wrong proposals.
+Other confirmed gaps: multi-call XML rejected wholesale; a numbered NEW list never reaches
+model; narration invents date/count facts and global 6/7/8 vs local 1/2/3 numbering; reopening
+fresh completed tasks searches only open; quoted saved markup trips output protocol parser;
+>512-character exact notes get a raw validation failure. Turkish prohibition read all tasks
+and proposed completion, but assessment blocked the write. Native data was not changed there.
+Note body is truncated to120 chars before model reasoning without an incompleteness marker:
+long-note sum failed, same 7+9 info in short note correctly gave16. Explicit truthful current
+date fixed the relative-month case. This is evidence for orchestration/context flaws alongside
+model planning/adherence failures; do not claim model size alone is the cause or train on cases.
+
+Native malformed/concurrent contract:80 invalid requests,167/167 checks passed incl40 inserts
+from two real Rust processes and stale-version rejection. Ordinary Brain/Qt536 passed/192
+skipped; Rust107 passed/7 ignored, fmt/Clippy all targets and new diagnostic Ruff passed.
+The earlier17 happy/bounded feature tests do NOT establish general task assistant acceptance.
+Raw evidence: target/personal-stress-181cdf19105d, -d1548c7dc0ca, -60ece61780ee;
+target/personal-contract-d30688231e. Diagnostic scripts intentionally exit1 on real failures.
+Fixtures: core/native/examples/organizer_probe.rs and scripts/evaluation/{stress_personal_organizer,
+stress_personal_followup,probe_personal_contract}.py. No failing cases were skipped/xfail'ed.
+Original markup oracle used post-error bindings (reset); repeated test checks actual returned
+native items instead and still fails for the real protocol exception. Production remains the
+same uncommitted feature revision from the previous turn; no restart/deploy/commit/push here.
+
+Latest feature (2026-10-18): user authorized persistent conversational personal tasks/notes.
+Implemented native SQLite Organizer + four registered tools, a separate semantic capability
+bundle, local-calendar dates, five-row private selection/version/120s bindings, add/list/edit/
+complete/reopen/reschedule/archive, note recall and shared Qt/voice presentation. /reset does
+not delete saved items. No sentence routing, Python database access, shell, cloud or scheduler.
+See [PERSONAL_ORGANIZER.md](../docs/brain/PERSONAL_ORGANIZER.md).
+
+Final ordinary Brain/Qt: 536 passed /192 skipped (2.45s). Rust: 107 passed /7 ignored;
+fmt, Clippy all targets and Ruff check/format (92 files) passed. Core tests used the isolated
+target/organizer-validation directory after repeated Windows LNK1104 in old default test EXEs;
+no ACL or security setting changed. 11 fresh production CLI processes passed isolated storage
+smoke (scripts/tests/smoke_personal_core.py), including restart persistence/stale-version error.
+Real 9B: 16/16 personal-agent cases passed (186.54s), plus the additional Turkish empty agenda/
+tomorrow-veterinary task/note-with-number sequence passed (42.38s), 17 personal cases total.
+Qt worker test verifies full agenda text reaches both display and speech, without stale file
+cards; existing SAPI text bound remains 1024. A partial-mutation regression was reproduced
+before fixing: first save succeeds, second fails; now the first success is retained/reported.
+Read-only discovery is not incorrectly counted as a successful launch by this fix.
+
+IMPORTANT extra file-model regression: 7/8 cross-topic discovery cases passed, graduation-photo
+request FAILED and was reproduced alone: planner returned find_files kind=image instead of
+kind=file/category=image. Strict schema rejected it before ANY Core call. The separate default
+photo opening test passed. This is an OPEN model-schema adherence regression; do not claim
+overall assistant/file acceptance. No per-photo mapping/alias or validation weakening was added.
+Historical three file semantic failures and ASR quality failures remain unaddressed.
+Updated production executable copied from the validated build into target/debug; Core started
+hidden, PID 7380 (verify processes rather than assuming). Live real-user Named Pipe registered
+all four tools and read today's empty list successfully. Sandbox account SID1008 cannot reach
+the real user's SID1001 pipe; same-user verification succeeded without endpoint/ACL changes.
+Final actual-model -> actual-Core -> actual-Named-Pipe check also passed for the user's Turkish
+"Jarvis bugün yapacaklarım neler?": list_personal_items was called, today's zero saved tasks
+were reported, and no mutation occurred. Native host-buffer diagnostic on model unload was
+nonfatal (exit 0). The configured English reply preference is unchanged, but this Turkish
+request produced a Turkish prose answer; strict response-language adherence is not established.
+Working tree started clean at 19fb1ab. This feature is uncommitted; no new commit/push was
+requested. Inspect git status/diff for current truth and preserve all prior historical reports.
+
 Latest pre-push review (2026-10-18): user reports voice somewhat improved, still needs work;
 requested repository/file-operation analysis and publishing the current update before choosing
 another task. See [PRE_PUSH_REVIEW_2026-10-18.md](../docs/brain/PRE_PUSH_REVIEW_2026-10-18.md).

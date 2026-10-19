@@ -35,7 +35,11 @@ def operation_failure(code):
         "policy_denied": "Core policy denied this operation.",
         "permission_denied": "Access to this operation was denied.",
         "execution_failed": (
-            "Windows could not complete the operation. "
-            "Check access and the default app association."
+            "The operation could not be completed. Check access or storage availability."
         ),
-    }.get(code, "The operation could not be completed; refresh the catalog and search again.")
+        "invalid_arguments": (
+            "The parameters or selected item are no longer valid; "
+            "check the request or list the items again."
+        ),
+        "confirmation_required": "Core policy requires confirmation before this operation.",
+    }.get(code, "The operation could not be completed. Check the request and current selection.")

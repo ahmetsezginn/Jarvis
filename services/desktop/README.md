@@ -10,6 +10,13 @@ jarvis -Desktop
 Qwen3.5-9B agent and session bindings. The fixed worker is a separate process so Qt remains
 responsive. No HTTP server, account or cloud speech service is required.
 
+Ask JARVIS to close its own application or use the window X. Both end the desktop process;
+the fixed Brain worker exits and the large language model is released. Session-only conversation
+ends; saved personal tasks/notes remain in native storage. There is no tray-resident assistant
+or background wake listener. Reopen manually with `jarvis -Desktop` for now.
+A separate lightweight Rust wake executable is [planned](../../docs/brain/WAKE_DAEMON_PLAN.md),
+not yet implemented. Existing ordinary voice controls below are unchanged.
+
 Type and press Enter (Shift+Enter adds a line). Hold **Hold to talk** while speaking and release
 to transcribe/send. Recognition uses multilingual Whisper Turbo Q5 through native transcribe.cpp with bounded
 spelling context from installed application names. Recognized words are never replaced by

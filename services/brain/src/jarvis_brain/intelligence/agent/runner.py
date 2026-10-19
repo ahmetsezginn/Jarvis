@@ -60,9 +60,23 @@ class AgentRuntime:
             self._this_turn_events = []
 
     def _response(
-        self, text, message, *, performed=False, intent=IntentName.RESPOND, memory_message=None
+        self,
+        text,
+        message,
+        *,
+        performed=False,
+        intent=IntentName.RESPOND,
+        memory_message=None,
+        conversation_display=False,
     ):
-        response = BrainResponse(intent, 1, "agent", performed, message)
+        response = BrainResponse(
+            intent,
+            1,
+            "agent",
+            performed,
+            message,
+            {"conversation_display": True} if conversation_display else None,
+        )
         # User-visible paths are deliberately outside model memory.
         remembered = BrainResponse(
             intent, 1, "agent", performed, message if memory_message is None else memory_message
@@ -146,13 +160,22 @@ class AgentRuntime:
             result = execute_capability(
                 self.registry.get(reference.shorthand), {"number": reference.number}
             )
-            return self._response(text, result.display, performed=result.performed)
+            return self._response(
+                text,
+                result.display,
+                performed=result.performed,
+                conversation_display=result.conversation_display,
+            )
         self.model.load()
         initial = self.snapshot(text)
         turn_events = []
         seen = set()
         display = ""
+        conversation_display = False
+        completed_displays = []
+        completed_actions = False
         performed = False
+        reviewed_answers = set()
         for _ in range(self.max_steps):
             snapshot = {
                 **initial,
@@ -172,6 +195,41 @@ class AgentRuntime:
             step = self.registry.parse(raw)
             self.trace.append({"step": step.action, "arguments": step.arguments})
             if step.action == "answer":
+                # Read-only omission review. It may request another model decision, never
+                # execute an effect or replace the independent dispatch-time assessment.
+                review = getattr(self.model, "assess_omitted_action", None)
+                repair = None
+                if callable(review):
+                    for candidate in self.registry.answer_reviews():
+                        if candidate.name in reviewed_answers:
+                            continue
+                        reviewed_answers.add(candidate.name)
+                        assessment = review(
+                            text,
+                            {"operation": candidate.permission, "parameters": {}},
+                            self.context,
+                        )
+                        requested = (
+                            assessment.authorized
+                            if isinstance(assessment, EffectAssessment)
+                            else assessment
+                        )
+                        if type(requested) is not bool:
+                            raise ModelOutputInvalid("invalid omitted-action assessment")
+                        if requested:
+                            repair = {
+                                "unperformed_requested_action": candidate.name,
+                                "required_actions": [candidate.name],
+                                "message": "The current request asks for this registered action, "
+                                "but no tool has performed it. Choose the action to perform it, "
+                                "not a promise, farewell, capability explanation or repeated "
+                                "permission question. This review executes nothing; normal "
+                                "validation and current-request authorization still apply.",
+                            }
+                            break
+                if repair:
+                    initial["response_feedback"] = repair
+                    continue
                 feedback = self.registry.response_feedback(step.arguments["message"])
                 if feedback is not None:
                     initial["response_feedback"] = safe_observation(feedback)
@@ -182,6 +240,7 @@ class AgentRuntime:
                     message + ("\n" + display if display else ""),
                     performed=performed,
                     memory_message=message,
+                    conversation_display=conversation_display,
                 )
             capability = self.registry.get(step.action)
             threshold = (
@@ -274,15 +333,33 @@ class AgentRuntime:
             self.expires = self.clock() + 120
             if observation.display:
                 display = observation.display
+                conversation_display = observation.conversation_display
             performed |= observation.performed
+            completed_actions |= capability.effect == "act" and observation.performed
+            if capability.effect == "act" and observation.performed and observation.display:
+                completed_displays.append((observation.display, observation.conversation_display))
             if observation.terminal:
+                partial = bool(completed_actions and not observation.performed)
+                if partial and completed_displays:
+                    display = (
+                        "Completed earlier in this turn:\n"
+                        + "\n".join(value for value, _ in completed_displays)
+                        + "\n"
+                        + display
+                    )
+                    conversation_display |= any(flag for _, flag in completed_displays)
                 if observation.confirmation is not None:
                     self.pending = (observation.confirmation, self.clock() + 120)
                 return self._response(
                     text,
                     display or "The operation was not completed.",
-                    performed=observation.performed,
-                    memory_message=observation.memory_message,
+                    performed=bool(observation.performed or completed_actions),
+                    memory_message=(
+                        "Some actions completed before a later operation failed."
+                        if partial
+                        else observation.memory_message
+                    ),
+                    conversation_display=conversation_display,
                 )
         return self._response(
             text,
@@ -290,6 +367,7 @@ class AgentRuntime:
             + ("\n" + display if display else ""),
             performed=performed,
             memory_message="The step limit for this turn was reached.",
+            conversation_display=conversation_display,
         )
 
 
@@ -303,7 +381,16 @@ def safe_observation(data):
             raise ModelOutputInvalid("observation nesting limit exceeded")
         if isinstance(value, dict):
             if any(
-                key in {"entry_id", "app_id", "folder_id", "path", "location", "request_id"}
+                key
+                in {
+                    "entry_id",
+                    "app_id",
+                    "folder_id",
+                    "record_id",
+                    "path",
+                    "location",
+                    "request_id",
+                }
                 for key in value
             ):
                 raise ModelOutputInvalid("private authority in model observation")

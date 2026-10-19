@@ -37,6 +37,8 @@
 !**/.env.example
 !**/.env.sample
 /config/preferences.toml
+# Private personal-organizer data and SQLite transaction sidecars
+organizer.sqlite3*
 *.local.toml
 
 # Logs, coverage, and temporary files

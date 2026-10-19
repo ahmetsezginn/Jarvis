@@ -57,6 +57,14 @@ class AgentModel(Protocol):
     ) -> bool | EffectAssessment: ...
 
 
+class AnswerReviewModel(Protocol):
+    """Optional semantic check for a registered, parameterless action omitted by a reply."""
+
+    def assess_omitted_action(
+        self, text: str, effect: dict, context: IntentContext | None = None
+    ) -> bool | EffectAssessment: ...
+
+
 @dataclass(frozen=True)
 class EffectAssessment:
     """Bounded requested-outcome description and judgment; never a plan or permission token."""

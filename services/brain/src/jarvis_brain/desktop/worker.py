@@ -56,13 +56,18 @@ class Session:
     def present(self, response):
         files = self.brain._files
         items = self.brain._agent.builtins.recommendations.items()
+        file_focus = self.brain._agent.registry.reference_active("builtin_results")
+        if not file_focus:
+            items = []
         self.page_token = str(uuid4()) if items else ""
         self.page_numbers = {item["number"] for item in items}
         # Spoken and conversational output use the model's selected suggestion, not a page count.
         history = self.brain._conversation.snapshot()
         text = history[-1].assistant if history else response.message
+        if isinstance(response.data, dict) and response.data.get("conversation_display"):
+            text = response.message
         speech = text
-        page_info = dict(files._page_info)
+        page_info = dict(files._page_info) if file_focus else {}
         if page_info:
             page_info["scope"] = (
                 files._scope["name"]
@@ -78,6 +83,7 @@ class Session:
             "page_info": page_info,
             "page_token": self.page_token,
             "has_more": bool(files._page) if items else False,
+            "desktop_event": self.brain._agent.builtins.desktop.event,
         }
 
 

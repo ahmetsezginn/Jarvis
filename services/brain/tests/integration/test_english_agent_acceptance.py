@@ -92,7 +92,12 @@ def runtime(model):
 def turn(brain, core, text):
     core.calls.clear()
     brain._model.events.clear()
-    response = brain.handle_text(text)
+    try:
+        response = brain.handle_text(text)
+    except Exception:
+        print("failed request", text, "Core calls", core.calls)
+        print("rejected model trace", brain._model.events)
+        raise
     print(text, "=>", response.message, core.calls)
     print("model trace", brain._model.events)
     return response

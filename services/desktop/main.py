@@ -53,6 +53,7 @@ class Controller(QObject):
     message = Signal(str, str)
     results = Signal(str)
     cleared = Signal()
+    desktopEvent = Signal(object)
 
     def __init__(self, launch_worker=True):
         super().__init__()
@@ -68,6 +69,7 @@ class Controller(QObject):
         self._speech_epoch = 0
         self._polling = False
         self._shutting_down = False
+        self._closing = False
         self._devices = [{"index": -1, "name": "System default microphone"}]
         self._recording_id = None
         self._released = False
@@ -273,12 +275,13 @@ class Controller(QObject):
             and not self._speaking
             and not self._speech_pending
             and not self._shutting_down
+            and not self._closing
         ):
             self.startVoice(self._device)
 
     @Slot(int)
     def startVoice(self, device):
-        if self._busy or self._shutting_down:
+        if self._busy or self._shutting_down or self._closing:
             return
         self._epoch += 1
         self._released = False
@@ -545,6 +548,8 @@ class Controller(QObject):
             elif result.get("event") == "error":
                 self.failure(result["message"])
             elif result.get("event") == "response":
+                if result.get("desktop_event"):
+                    self.desktopEvent.emit(result["desktop_event"])
                 self.state("Ready", False)
                 self._page_token = result.get("page_token", "")
                 info = result.get("page_info", {})
@@ -564,7 +569,7 @@ class Controller(QObject):
                 self.results.emit(json.dumps(result.get("items", []), ensure_ascii=False))
                 text = result["text"]
                 self.message.emit("assistant", text)
-                if getattr(self, "voice_enabled", True) and text.strip():
+                if not self._closing and getattr(self, "voice_enabled", True) and text.strip():
                     speech = result.get("speech_text", text)
                     self.speak_text(speech)
                 else:
@@ -623,6 +628,7 @@ class Controller(QObject):
             self.worker.terminate()
             if not self.worker.waitForFinished(1500):
                 self.worker.kill()
+                self.worker.waitForFinished(1500)
 
 
 def configure_appearance(app):
@@ -636,6 +642,8 @@ def configure_appearance(app):
 
 
 def main():
+    from lifecycle import DesktopLifecycle
+
     app = QGuiApplication(sys.argv)
     configure_appearance(app)
     app.setApplicationName("JARVIS")
@@ -646,6 +654,9 @@ def main():
     if not engine.rootObjects():
         controller.shutdown()
         return 1
+    lifecycle = DesktopLifecycle(app, controller, CoreCall)
+    lifecycle.start()
+    app.aboutToQuit.connect(lifecycle.shutdown)
     app.aboutToQuit.connect(controller.shutdown)
     return app.exec()
 

@@ -24,6 +24,7 @@ class Observation:
     confirmation: Callable[[], Observation] | None = None
     retryable: bool = False
     memory_message: str | None = None
+    conversation_display: bool = False
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class Capability:
     authorization_view: Callable[[dict], dict] | None = None
     available: Callable[[], bool] | None = None
     minimum_confidence: float | None = None
+    review_on_answer: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,7 @@ class CapabilityRegistry:
         self._contexts = {}
         self._references = {}
         self._response_checks = {}
+        self._reference_focus = {"owner": None}
         for capability in capabilities:
             self.register(capability)
 
@@ -84,6 +87,16 @@ class CapabilityRegistry:
                 and not callable(capability.authorization_view)
             )
             or (capability.available is not None and not callable(capability.available))
+            or type(capability.review_on_answer) is not bool
+            or (
+                capability.review_on_answer
+                and (
+                    capability.effect != "act"
+                    or not isinstance(capability.parameters, dict)
+                    or capability.parameters.get("properties")
+                    or capability.authorization_view is not None
+                )
+            )
             or (
                 capability.minimum_confidence is not None
                 and (
@@ -109,6 +122,7 @@ class CapabilityRegistry:
             capability.authorization_view,
             capability.available,
             capability.minimum_confidence,
+            capability.review_on_answer,
         )
 
     def supported_by(self, core_tools):
@@ -119,6 +133,7 @@ class CapabilityRegistry:
         registry._contexts = dict(self._contexts)
         registry._references = dict(self._references)
         registry._response_checks = dict(self._response_checks)
+        registry._reference_focus = self._reference_focus
         return registry
 
     def register_response_check(self, name, check):
@@ -140,12 +155,24 @@ class CapabilityRegistry:
         self._references[name] = resolve
 
     def reference(self, text):
+        owner = self._reference_focus["owner"]
         matches = [
-            value for resolve in self._references.values() if (value := resolve(text)) is not None
+            value
+            for name, resolve in self._references.items()
+            if (owner is None or name == owner) and (value := resolve(text)) is not None
         ]
         if len(matches) > 1 or any(not isinstance(v, ResultReference) for v in matches):
             raise ModelOutputInvalid("ambiguous or invalid result-reference binding")
         return matches[0] if matches else None
+
+    def activate_reference(self, name):
+        """Only a trusted bundle displaying a new page may take numbered-selection focus."""
+        if name not in self._references:
+            raise ValueError("unknown reference owner")
+        self._reference_focus["owner"] = name
+
+    def reference_active(self, name):
+        return self._reference_focus["owner"] in (None, name)
 
     def register_context(self, name, view, clear, *, begin=None, finish=None):
         """Trusted bundles expose bounded state and reset hooks without changing the loop."""
@@ -169,6 +196,7 @@ class CapabilityRegistry:
         return result
 
     def clear_contexts(self):
+        self._reference_focus["owner"] = None
         for _, clear, _, _ in self._contexts.values():
             clear()
 
@@ -203,6 +231,10 @@ class CapabilityRegistry:
             }
             for c in self._available()
         ]
+
+    def answer_reviews(self):
+        """Opt-in targetless effects whose omission can be reviewed without guessing parameters."""
+        return [capability for capability in self._available() if capability.review_on_answer]
 
     def schema(self):
         actions = [("answer", object_schema(message=text_schema(1024, format="text", minLength=1)))]
