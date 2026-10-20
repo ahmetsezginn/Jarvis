@@ -2,6 +2,13 @@
 
 This document tracks the technical development sequence of JARVIS.
 
+Current implementation (20 October 2026): a capability-driven local GGUF agent, Qt Quick/PySide6
+desktop, native speech, independent Windows wake service and persistent personal tasks/notes
+including daily recurrence are implemented. The milestone sequence below is historical;
+its ONNX, TypeScript and planned-voice entries do not describe the current runtime.
+Use [README.md](README.md), [current state](agent/STATE.md) and
+[architecture](agent/ARCHITECTURE.md) for active setup, scope and remaining failures.
+
 Current Windows native build requires explicit speech-runtime provisioning before Cargo:
 `scripts/models/provision_transcribe.ps1` prepares the pinned transcribe.cpp prebuilt prefix.
 See [native speech setup](docs/brain/NATIVE_SPEECH_PROVIDER.md). Builds and startup never download it.

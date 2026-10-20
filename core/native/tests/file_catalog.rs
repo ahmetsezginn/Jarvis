@@ -74,6 +74,171 @@ fn search(catalog: &FileCatalog, query: &str) -> serde_json::Value {
 }
 
 #[test]
+fn steam_shortcuts_open_through_normal_catalog_ids_without_executing_shortcut_files() {
+    let (directory, catalog, platform, audit, executor) = fixture();
+    for (name, id) in [("Team Fortress.url", 440), ("Başka Oyun.URL", 570)] {
+        fs::write(
+            directory.path().join(name),
+            format!("[InternetShortcut]\nURL=steam://rungameid/{id}\nIconFile=C:\\untrusted.exe\n"),
+        )
+        .unwrap();
+    }
+    for name in ["Team Fortress.url", "Başka Oyun.URL"] {
+        let found = search(&catalog, name);
+        let result = request(
+            &executor,
+            "open_file",
+            json!({"entry_id":found["entries"][0]["entry_id"]}),
+        );
+        assert_eq!(result.status, ToolStatus::Success, "{result:?}");
+        assert_eq!(result.data["opened"], true);
+    }
+    assert_eq!(platform.calls().opened_steam_games, vec![440, 570]);
+    assert!(platform.calls().opened_files.is_empty());
+    assert!(platform.calls().opened_applications.is_empty());
+    assert!(
+        audit
+            .events()
+            .iter()
+            .all(|event| event.decision == AuditDecision::Allow)
+    );
+}
+
+#[test]
+fn unsafe_oversized_modified_and_unknown_shortcuts_never_reach_platform() {
+    let (directory, catalog, platform, _audit, executor) = fixture();
+    let cases = [
+        (
+            "web.url",
+            "[InternetShortcut]\nURL=https://example.com".to_owned(),
+        ),
+        (
+            "program.url",
+            "[InternetShortcut]\nURL=file:///C:/bad.exe".to_owned(),
+        ),
+        (
+            "install.url",
+            "[InternetShortcut]\nURL=steam://install/440".to_owned(),
+        ),
+        (
+            "flags.url",
+            "[InternetShortcut]\nURL=steam://rungameid/440/-flag".to_owned(),
+        ),
+        (
+            "duplicate.url",
+            "[InternetShortcut]\nURL=steam://rungameid/440\nURL=steam://rungameid/570".to_owned(),
+        ),
+        (
+            "huge.url",
+            format!(
+                "[InternetShortcut]\nURL=steam://rungameid/440\nIconFile={}",
+                "a".repeat(17000)
+            ),
+        ),
+        (
+            "program.lnk",
+            "[InternetShortcut]\nURL=steam://rungameid/440".to_owned(),
+        ),
+    ];
+    for (name, text) in &cases {
+        fs::write(directory.path().join(name), text).unwrap();
+    }
+    for (name, _) in cases {
+        let found = search(&catalog, name);
+        assert_ne!(
+            request(
+                &executor,
+                "open_file",
+                json!({"entry_id":found["entries"][0]["entry_id"]})
+            )
+            .status,
+            ToolStatus::Success,
+            "{name}"
+        );
+    }
+    let changed = directory.path().join("changed.url");
+    fs::write(&changed, "[InternetShortcut]\nURL=steam://rungameid/440").unwrap();
+    catalog.refresh().unwrap();
+    let found = search(&catalog, "changed.url");
+    let id = found["entries"][0]["entry_id"].clone();
+    fs::write(&changed, "[InternetShortcut]\nURL=steam://rungameid/123456").unwrap();
+    for args in [
+        json!({"entry_id":id}),
+        json!({"entry_id":"unknown"}),
+        json!({"entry_id":id,"url":"steam://rungameid/570"}),
+        json!({"entry_id":id,"app_id":570}),
+    ] {
+        assert_ne!(
+            request(&executor, "open_file", args).status,
+            ToolStatus::Success
+        );
+    }
+    assert!(platform.calls().opened_steam_games.is_empty());
+    assert!(platform.calls().opened_files.is_empty());
+}
+
+#[test]
+fn steam_shortcut_launch_still_obeys_policy_before_platform_dispatch() {
+    let (directory, catalog, platform, _audit, _) = fixture();
+    fs::write(
+        directory.path().join("Game.url"),
+        "[InternetShortcut]\nURL=steam://rungameid/440",
+    )
+    .unwrap();
+    let id = search(&catalog, "Game.url")["entries"][0]["entry_id"].clone();
+    let mut registry = ToolRegistry::new();
+    for tool in FileCatalogTool::all(catalog) {
+        registry.register(tool).unwrap();
+    }
+    let audit = Arc::new(MemoryAuditSink::default());
+    let denied = Executor::new(registry, Arc::new(Deny), audit.clone(), platform.clone());
+    assert_eq!(
+        request(&denied, "open_file", json!({"entry_id":id})).status,
+        ToolStatus::Denied
+    );
+    assert!(platform.calls().opened_steam_games.is_empty());
+    assert_eq!(audit.events()[0].decision, AuditDecision::Deny);
+}
+
+#[test]
+fn steam_shortcut_crosses_the_existing_ipc_registry_and_executor_contract() {
+    use jarvis_core::ipc::{CONTROL_PROTOCOL_VERSION, ControlSession, RequestEnvelope};
+    let (directory, catalog, platform, _audit, executor) = fixture();
+    fs::write(
+        directory.path().join("Game.url"),
+        "[InternetShortcut]\nURL=steam://rungameid/570",
+    )
+    .unwrap();
+    let id = search(&catalog, "Game.url")["entries"][0]["entry_id"].clone();
+    let mut control = ControlSession::new(Arc::new(executor));
+    let envelope = |kind: &str, payload| RequestEnvelope {
+        protocol_version: CONTROL_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4().to_string(),
+        message_type: kind.into(),
+        payload,
+    };
+    assert!(
+        control
+            .handle_request(envelope(
+                "hello",
+                json!({"client":"jarvis-brain","client_version":"0.1.0"}),
+            ))
+            .ok
+    );
+    let response = control.handle_request(envelope(
+        "execute_tool",
+        json!({"tool":"open_file","arguments":{"entry_id":id}}),
+    ));
+    assert_eq!(
+        response.payload.as_ref().unwrap()["status"],
+        "success",
+        "{response:?}"
+    );
+    assert_eq!(platform.calls().opened_steam_games, vec![570]);
+    assert!(platform.calls().opened_files.is_empty());
+}
+
+#[test]
 fn filename_word_prefixes_preserve_numeric_versions_and_scope() {
     let (directory, catalog, _, _, executor) = fixture();
     for name in [

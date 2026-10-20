@@ -4,18 +4,25 @@ Project documents have one canonical location in this folder. The root AGENTS.md
 automatic-discovery entry point. Commands and source paths in these documents are relative to
 the repository root, unless explicitly stated otherwise.
 
-Independent Windows wake process: [WAKE_DAEMON_PLAN.md](../docs/brain/WAKE_DAEMON_PLAN.md)
-(PLANNING ONLY). The earlier integrated Core/Qt wake was removed. Desktop close now exits
-Qt and its Brain worker; current implementation notes: [DESKTOP_WAKE.md](../docs/brain/DESKTOP_WAKE.md).
+Windows wake service in the same product/workspace: [setup](../services/wake/README.md) and
+[implementation/acceptance](../docs/brain/WAKE_DAEMON_PLAN.md). SCM/activation are implemented;
+actual microphone accuracy is still under evaluation after a failed user test. The earlier
+integrated Core/Qt wake was removed. Desktop close exits Qt/Brain:
+[DESKTOP_WAKE.md](../docs/brain/DESKTOP_WAKE.md).
 
 Current task/notes capability: [PERSONAL_ORGANIZER.md](../docs/brain/PERSONAL_ORGANIZER.md).
-Persistent native storage, daily agendas, completion/reopening, rescheduling and note recall;
+Persistent native storage, daily agendas/recurrence, day copying, completion/reopening,
+rescheduling and note recall;
 the same model-driven capability loop handles typed and spoken requests.
+Day copying, daily persistence and atomic recurrence groups:
+[TASK_ROUTINES_2026-10-20.md](../docs/brain/TASK_ROUTINES_2026-10-20.md).
 Adversarial review supersedes the earlier bounded acceptance: [PERSONAL_ORGANIZER_STRESS_2026-10-18.md](../docs/brain/PERSONAL_ORGANIZER_STRESS_2026-10-18.md).
 Actual wrong-target and wrong-date writes were reproduced; overall task acceptance is FAILED.
 
 Current desktop/voice milestone: [DESKTOP_VOICE.md](../docs/brain/DESKTOP_VOICE.md), with setup at
 [services/desktop/README.md](../services/desktop/README.md). Launch with `jarvis -Desktop`.
+
+Catalog-backed `.url` Steam game opening: [STEAM_SHORTCUTS.md](../docs/brain/STEAM_SHORTCUTS.md).
 
 Progressive suggestions and rejection dialogue: [RECOMMENDATIONS.md](../docs/brain/RECOMMENDATIONS.md).
 Latest normal reply voice and unknown-filename discovery follow-up:
@@ -31,6 +38,8 @@ Latest correction: Handy's native engine integrated directly into JARVIS Rust Co
 [NATIVE_SPEECH_PROVIDER.md](../docs/brain/NATIVE_SPEECH_PROVIDER.md).
 
 Latest repository/file-operation review and publication checks:
+[PRE_PUSH_REVIEW_2026-10-20.md](../docs/brain/PRE_PUSH_REVIEW_2026-10-20.md).
+Earlier file-operation review:
 [PRE_PUSH_REVIEW_2026-10-18.md](../docs/brain/PRE_PUSH_REVIEW_2026-10-18.md).
 
 Current architecture revision: [AGENT_LOOP.md](../docs/brain/AGENT_LOOP.md). Production now uses

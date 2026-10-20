@@ -11,12 +11,22 @@ including conversational questions about what is planned for today.
 ## Behavior
 
 - Save tasks with an optional day, and notes with optional body text. No invented deadlines.
-- List pending, done or archived items, by today/tomorrow/date/overdue/undated/all, with an
+- List pending, done or archived items, by yesterday/today/tomorrow/date/overdue/undated/all, with an
   optional title/body text search. Five rows per page, next page available.
 - Complete, reopen, reschedule, rename or edit a selected item. Archive hides it reversibly;
   listing archived items and reopening restores it. Notes cannot be completed or dated.
 - Recall notes in a fresh session. Conversation `/reset` does not delete personal records.
 - Use the same CLI/Qt/voice conversation and current-action permission assessment.
+- Save daily tasks using recurrence=daily, including making an existing open task daily.
+  An omitted start date means today. Rules and individual days' edits/completions survive
+  restart. Completing today leaves tomorrow open. Stop repetition after the selected day
+  with recurrence=none; earlier completed dates remain available.
+- Copy a whole day's non-archived agenda to another date atomically, preserving originals
+  and creating open one-time tasks. Explicit task counts must match before any write.
+  Repeating the same source/day/target request cannot duplicate its copies. Daily routines
+  already scheduled for the target date count as already present.
+- Set recurrence atomically for a complete current selection of two to five verified tasks.
+  A stale/invalid member rolls back the entire group; partial pages cannot become a whole set.
 
 Examples are ordinary requests, not required command phrases:
 
@@ -36,15 +46,39 @@ The configured response language remains English; the local model may answer Tur
 in Turkish (also seen in the live check). Unicode input/content is preserved. Today
 is the exact local date; overdue and undated work is available separately. Saved tasks never
 prove what has been done on the computer. Date-only records do not schedule notifications.
-No alarms, reminders that ring, recurrence, calendar integration, cloud sync or permanent
+No alarms, reminders that ring, weekly/monthly recurrence, calendar integration, cloud sync or permanent
 deletion are implemented. Long responses are fully visible; existing local TTS speaks at
 most 1024 characters. There is no dedicated task-board UI in this delivery.
 
 ## Implementation and privacy
 
+Daily repetition uses date projections, not a resident scheduler. Reads do not insert rows.
+An exact day shows that day's occurrence; all-date lists include edited/completed history and
+the current (or future start / stopped last) day. Missed unedited days do not accumulate in
+overdue results. Daily title/body/status edits affect only the selected day; moving a daily
+occurrence or restarting a stopped routine is not supported. Create a new routine when needed.
+Stopping ends future dates after the selected day, preserving earlier history. Native optimistic
+versions cover a routine and its occurrences together, so another edit requires a fresh list
+when its binding becomes stale. Weekly/monthly rules and notifications are separate features.
+
+Day-copy is bounded to 100 non-archived source tasks per transaction. It includes done tasks,
+creates one-time open copies, and never changes the source dates/completions. A persisted
+source-ID/source-day/target-day key prevents replay duplicates. Copying one named subset is
+not a whole-day operation and must not use this tool. Count mismatches roll back without writes.
+The expected count is mandatory. Use the user's count when supplied; otherwise list that day
+with status=all and use native copyable_total, not a page length or a total including archives.
+The provider independently interprets the current request before seeing the planner's proposal.
+This can only veto, not authorize. Pure prohibitions stop; explicit whole-set count mismatches
+cannot dispatch. The target/field assessment and Rust policy still run for positive requests.
+This adds a local inference call. It does not establish universal model understanding; the older
+wrong-target/date stress failures remain open until separately retested and repaired.
+
 `services/brain/.../agent/organizer.py` is a separately registered trusted capability bundle.
 The loop selects tools using their schemas; no sentence/document-specific routing is added.
-Native tools: `organizer_clock`, `organizer_list`, `organizer_add`, `organizer_update`.
+Native tools: `organizer_clock`, `organizer_list`, `organizer_add`, `organizer_update`,
+`organizer_copy_tasks`.
+`organizer_set_recurrence` applies the same setting to a bounded verified group. Copy results
+return actual linked target rows, so statuses and follow-up selections do not reuse originals.
 Every request still passes Named Pipe handshake, native typed validation, policy and audit.
 Read tools are ReadOnly; local mutations are Low. An action also needs current-request
 assessment by the agent. It is not a new security guarantee about the local model's reasoning.
@@ -56,7 +90,9 @@ text is not included in structured audit events. Database/sidecars are excluded 
 production tests use temporary or in-memory stores rather than adding sample user records.
 
 The store has a schema version, SQLite transactions, two-second lock timeout, maximum
-10,000 records, 160-character titles and 512-character bodies. Unknown/newer schemas and
+10,000 task/note rows plus occurrence overrides in total, 160-character titles and
+512-character bodies. Schema v2 migrates v1 transactionally and retains original IDs,
+dates, statuses and versions. Unknown/newer schemas and
 corruption return errors without recreating the database. List-before-first-save is empty
 and does not create storage. Parameterized SQL keeps saved text separate from SQL syntax.
 SQLite was added for atomic durable writes and cross-process transactions; Chrono handles
@@ -74,7 +110,9 @@ the model should ask for a distinguishing number/detail rather than guess.
 
 ## Validation
 
-Current results and unresolved behavior are recorded in agent/STATE.md. Reproducible commands
+Current results and unresolved behavior are recorded in agent/STATE.md. New day-copy/daily/group
+evidence and failures found during implementation:
+[TASK_ROUTINES_2026-10-20.md](TASK_ROUTINES_2026-10-20.md). Reproducible commands
 (add the repository root and Brain source/venv packages to PYTHONPATH on this host):
 
 ```powershell

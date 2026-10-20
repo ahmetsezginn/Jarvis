@@ -1,7 +1,9 @@
 """Qt Quick desktop. Fixed worker bootstrap; all machine/device actions go through Core."""
 
 import json
+import math
 import sys
+import time
 from pathlib import Path
 
 from jarvis_brain.core.client import JarvisCoreClient
@@ -55,12 +57,30 @@ class Controller(QObject):
     cleared = Signal()
     desktopEvent = Signal(object)
 
-    def __init__(self, launch_worker=True):
+    def __init__(
+        self,
+        launch_worker=True,
+        *,
+        startup_voice=False,
+        microphone_name="",
+        startup_estimate_seconds=8,
+        clock=time.monotonic,
+    ):
         super().__init__()
         self._status = "Connecting"
         self._busy = True
+        self._model_loading = launch_worker
+        self._model_load_ms = None
+        # The current 9B host measured 7.9s. This is a labelled estimate, not readiness.
+        self._startup_estimate = startup_estimate_seconds
+        self._startup_clock = clock
+        self._startup_started = None
+        self._startup_announced = False
+        self._startup_devices_ready = False
         self._recording = False
-        self._automatic = False
+        self._automatic = startup_voice
+        self._startup_voice_pending = startup_voice
+        self._microphone_name = microphone_name
         self._voice_phase = "idle"
         self._level = 0.0
         self._device = -1
@@ -73,8 +93,8 @@ class Controller(QObject):
         self._devices = [{"index": -1, "name": "System default microphone"}]
         self._recording_id = None
         self._released = False
-        self._voice_language = "auto"
-        self._reply_language = "en"
+        self._voice_language = "tr" if startup_voice else "auto"
+        self._reply_language = "tr" if startup_voice else "en"
         self._output_device = -1
         self._outputs = [{"index": -1, "name": "Default speech output"}]
         self._output_note = ""
@@ -97,16 +117,19 @@ class Controller(QObject):
             lambda _: self.failure("Assistant process could not start.")
         )
         self.worker.finished.connect(self.worker_finished)
-        if launch_worker:
-            self.worker.start()
-        else:
-            self.state("Ready", False)
         self.deadline = QTimer(self)
         self.deadline.setSingleShot(True)
         self.deadline.timeout.connect(self.voice_limit)
         self.poll_timer = QTimer(self)
         self.poll_timer.setInterval(200)
         self.poll_timer.timeout.connect(self.pollVoice)
+        self.startup_timer = QTimer(self)
+        self.startup_timer.setInterval(1000)
+        self.startup_timer.timeout.connect(self.changed.emit)
+        if launch_worker:
+            self.worker.start()
+        else:
+            self.state("Ready", False)
 
     @Property(str, notify=changed)
     def status(self):
@@ -115,6 +138,29 @@ class Controller(QObject):
     @Property(bool, notify=changed)
     def busy(self):
         return self._busy
+
+    @Property(bool, notify=changed)
+    def modelLoading(self):
+        return self._model_loading
+
+    def startup_remaining(self):
+        elapsed = (
+            0 if self._startup_started is None else self._startup_clock() - self._startup_started
+        )
+        return max(0, math.ceil(self._startup_estimate - elapsed))
+
+    @Property(str, notify=changed)
+    def startupNote(self):
+        if not self._model_loading:
+            return ""
+        if self._startup_started is None:
+            return "Sistem aktifleştiriliyor…"
+        remaining = self.startup_remaining()
+        return (
+            f"Sistem aktifleştiriliyor · Tahmini kalan: {remaining} saniye"
+            if remaining
+            else "Sistem aktifleştiriliyor · Hazırlık devam ediyor…"
+        )
 
     @Property(bool, notify=changed)
     def recording(self):
@@ -135,6 +181,10 @@ class Controller(QObject):
     @Property(str, notify=changed)
     def devices(self):
         return json.dumps(self._devices)
+
+    @Property(int, notify=changed)
+    def inputDevice(self):
+        return self._device
 
     @Property(str, notify=changed)
     def recognitionLanguage(self):
@@ -173,6 +223,7 @@ class Controller(QObject):
         self.changed.emit()
 
     def failure(self, text):
+        self._startup_voice_pending = False
         self._automatic = False
         self._voice_phase = "idle"
         self._level = 0.0
@@ -196,7 +247,7 @@ class Controller(QObject):
             self.failure("Assistant is offline. Close and reopen JARVIS.")
             return
         self._voice_phase = "processing"
-        self.state("Thinking", True)
+        self.state("Preparing assistant" if self._model_loading else "Thinking", True)
         self.worker.write((json.dumps(value, ensure_ascii=False) + "\n").encode("utf-8"))
 
     @Slot(str)
@@ -240,8 +291,11 @@ class Controller(QObject):
         self._level = 0.0
         if not self._recording:
             self.poll_timer.stop()
-        if preparing:
-            self.state("Ready", False)
+        if preparing or (
+            self._model_loading and self._status in {"Speaking", "Sistem aktifleştiriliyor"}
+        ):
+            starting = self._model_loading and self._startup_voice_pending
+            self.state("Sistem aktifleştiriliyor" if starting else "Ready", starting)
         self.changed.emit()
         self.core("speech_stop", {}, self.output_stopped)
 
@@ -256,8 +310,13 @@ class Controller(QObject):
                 return
             self._automatic = True
             self._device = device
-            self.startVoice(device)
+            if self._model_loading:
+                self._startup_voice_pending = True
+                self.announce_startup()
+            else:
+                self.startVoice(device)
         else:
+            self._startup_voice_pending = False
             self._automatic = False
             if self._status == "Thinking":
                 self.changed.emit()
@@ -270,6 +329,8 @@ class Controller(QObject):
     def resume_automatic(self):
         if (
             self._automatic
+            and not self._model_loading
+            and not self._startup_voice_pending
             and not self._busy
             and not self._recording
             and not self._speaking
@@ -283,7 +344,10 @@ class Controller(QObject):
     def startVoice(self, device):
         if self._busy or self._shutting_down or self._closing:
             return
+        if self._model_loading or self._startup_voice_pending:
+            return
         self._epoch += 1
+        self._device = device
         self._released = False
         self._recording = True
         self._speaking = False
@@ -354,7 +418,9 @@ class Controller(QObject):
                 return
             if token is not None:
                 phase = data.get("phase")
-                if phase == "error":
+                if data.get("input_changed") and self._automatic and self._device < 0:
+                    self.restart_default_input()
+                elif phase == "error":
                     detail = data.get("error") or "Microphone stream failed"
                     self.cancelVoice()
                     self.failure(detail)
@@ -370,15 +436,45 @@ class Controller(QObject):
                 self._voice_phase = (
                     "processing" if queued else "speaking" if self._speaking else "idle"
                 )
+                starting = self._model_loading and self._startup_voice_pending
                 self.state(
-                    "Preparing voice" if queued else "Speaking" if self._speaking else "Ready",
-                    False,
+                    "Preparing voice"
+                    if queued
+                    else "Speaking"
+                    if self._speaking
+                    else "Sistem aktifleştiriliyor"
+                    if starting
+                    else "Ready",
+                    starting,
                 )
                 if not self._speaking:
                     self.poll_timer.stop()
                     QTimer.singleShot(300, self.resume_automatic)
 
         self.core("speech_poll", {} if token is None else {"recording_id": token}, polled)
+
+    def restart_default_input(self):
+        # Native Core discarded the old route's PCM. Await teardown before reacquiring default.
+        token, self._recording_id = self._recording_id, None
+        self._epoch += 1
+        epoch = self._epoch
+        self._recording = False
+        self._level = 0.0
+        self.deadline.stop()
+        self.poll_timer.stop()
+        self._voice_phase = "opening"
+        self.state("Switching microphone", True)
+
+        def stopped(_data, error):
+            if epoch != self._epoch or self._shutting_down or self._closing:
+                return
+            if error:
+                self.failure(error)
+                return
+            self.state("Ready", False)
+            QTimer.singleShot(300, self.resume_automatic)
+
+        self.core("speech_cancel", {"recording_id": token}, stopped)
 
     def voice_limit(self):
         self.cancelVoice()
@@ -543,9 +639,30 @@ class Controller(QObject):
             except (ValueError, UnicodeError):
                 continue  # Native diagnostic output is never interpreted as a command.
             if result.get("event") == "ready":
-                self.state("Ready", False)
+                self._model_loading = bool(result.get("model_loading", False))
+                if self._model_loading:
+                    self._startup_started = self._startup_clock()
+                    self.startup_timer.start()
+                starting = self._model_loading and self._startup_voice_pending
+                self.state("Sistem aktifleştiriliyor" if starting else "Ready", starting)
                 self.core("speech_status", {}, self.device_status)
+            elif result.get("event") == "model_ready":
+                self._model_loading = False
+                self._model_load_ms = result.get("load_time_ms")
+                self.startup_timer.stop()
+                self.changed.emit()
+                if self._shutting_down or self._closing:
+                    continue
+                if self._startup_voice_pending:
+                    self.announce_startup()
+                elif self._status == "Preparing assistant":
+                    self.state("Thinking", True)
             elif result.get("event") == "error":
+                if result.get("stage") == "model_load":
+                    self._model_loading = False
+                    self.startup_timer.stop()
+                    if self._recording:
+                        self.cancelVoice()
                 self.failure(result["message"])
             elif result.get("event") == "response":
                 if result.get("desktop_event"):
@@ -588,11 +705,14 @@ class Controller(QObject):
             self._output_note = f"{data['voice']} → {data['output_device']}"
         self._speaking = True
         self._voice_phase = "speaking"
-        self.state("Speaking", False)
+        self.state("Speaking", self._model_loading and self._startup_voice_pending)
         self.poll_timer.start()
 
     def device_status(self, data, error):
         if error:
+            if self._startup_voice_pending:
+                self.failure(f"Voice is unavailable: {error}")
+                return
             self.message.emit("system", f"Voice is unavailable: {error}")
             return
         self._devices = self._devices[:1] + data.get("devices", [])
@@ -607,8 +727,57 @@ class Controller(QObject):
         if data.get("output_error"):
             self.message.emit("system", f"Voice output unavailable: {data['output_error']}")
         self.changed.emit()
+        if self._startup_voice_pending and not self._shutting_down and not self._closing:
+            if self._microphone_name:
+                matches = [
+                    device
+                    for device in self._devices[1:]
+                    if device["name"] == self._microphone_name
+                ]
+                if len(matches) != 1:
+                    self.failure(f"Selected microphone is unavailable: {self._microphone_name}")
+                    return
+                self._device = matches[0]["index"]
+            self.changed.emit()
+            self._startup_devices_ready = True
+            self.announce_startup()
+
+    def announce_startup(self):
+        if (
+            not self._startup_voice_pending
+            or not self._startup_devices_ready
+            or self._shutting_down
+            or self._closing
+        ):
+            return
+        if self._model_loading:
+            if self._startup_announced:
+                return
+            self._startup_announced = True
+            remaining = self.startup_remaining()
+            text = (
+                f"Sistem aktifleştiriliyor. Tahmini {remaining} saniye kaldı."
+                if remaining
+                else "Sistem aktifleştiriliyor. Hazırlık devam ediyor."
+            )
+        else:
+            self._startup_voice_pending = False
+            if self._speaking or self._speech_pending:
+                self.stopSpeaking()  # Purge the preparation announcement, never queue stale counts.
+            text = "Sistem aktif. Merhaba, nasıl yardımcı olabilirim?"
+        self.message.emit("assistant", text)
+        if getattr(self, "voice_enabled", True):
+            self.speak_text(text)
+        elif not self._model_loading:
+            self.state("Ready", False)
+            self.resume_automatic()
+        else:
+            self.state("Sistem aktifleştiriliyor", True)
 
     def worker_finished(self, *_):
+        self._model_loading = False
+        self._startup_voice_pending = False
+        self.startup_timer.stop()
         if self._recording:
             self.cancelVoice()
         self._automatic = False
@@ -618,6 +787,7 @@ class Controller(QObject):
     @Slot()
     def shutdown(self):
         self._shutting_down = True
+        self.startup_timer.stop()
         self._automatic = False
         self.poll_timer.stop()
         if self._recording:
@@ -647,7 +817,7 @@ def main():
     app = QGuiApplication(sys.argv)
     configure_appearance(app)
     app.setApplicationName("JARVIS")
-    controller = Controller()
+    controller = Controller(startup_voice=True)
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("jarvis", controller)
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("Main.qml"))))

@@ -1,9 +1,11 @@
 import json
+from io import BytesIO
 
 import pytest
 from scripts.evaluation.analyze_file_assistance import SyntheticCore
 
-from jarvis_brain.desktop.worker import Session
+from jarvis_brain.desktop.worker import Session, serve
+from jarvis_brain.errors import ModelLoadError
 
 
 class Model:
@@ -22,6 +24,64 @@ class Model:
 
 def action(name, **args):
     return {"action": name, "arguments": args, "confidence": 1}
+
+
+def test_worker_preloads_before_reading_input_and_then_processes_early_message_once():
+    events = []
+    core = SyntheticCore()
+
+    class Preloaded(Model):
+        initialized = False
+        loads = 0
+
+        def load(self):
+            if not self.initialized:
+                assert events == [{"event": "ready", "model_loading": True}]
+                assert not core.calls
+                self.initialized = True
+                self.loads += 1
+
+    model = Preloaded(action("answer", message="Hello."))
+
+    class EarlyInput(BytesIO):
+        def readline(self, limit):
+            assert model.initialized
+            return super().readline(limit)
+
+    code = serve(core, model, EarlyInput(b'{"op":"chat","text":"Hello"}\n'), events.append)
+    assert code == 0 and model.loads == 1
+    assert [event["event"] for event in events] == ["ready", "model_ready", "response"]
+    assert events[1]["load_time_ms"] >= 0 and events[2]["text"] == "Hello."
+    assert not core.calls
+
+
+def test_worker_loads_without_waiting_for_a_first_message():
+    events, loads = [], []
+
+    class Preloaded(Model):
+        def load(self):
+            loads.append(True)
+
+    assert serve(SyntheticCore(), Preloaded(), BytesIO(), events.append) == 0
+    assert loads == [True] and [event["event"] for event in events] == ["ready", "model_ready"]
+
+
+def test_worker_failed_preload_never_reads_or_executes_a_queued_message():
+    core, events = SyntheticCore(), []
+    source = BytesIO(b'{"op":"chat","text":"Open an app"}\n')
+
+    class Failed(Model):
+        def load(self):
+            raise ModelLoadError("Artifact verification failed")
+
+    assert serve(core, Failed(), source, events.append) == 1
+    assert source.tell() == 0 and not core.calls
+    assert events[-1] == {
+        "event": "error",
+        "stage": "model_load",
+        "message": "Artifact verification failed",
+    }
+    assert not any(event["event"] == "model_ready" for event in events)
 
 
 def test_desktop_uses_same_session_and_separates_paths_from_spoken_reply():

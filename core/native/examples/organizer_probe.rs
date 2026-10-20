@@ -51,7 +51,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && !matches!(
                     request.payload.get("tool").and_then(|v| v.as_str()),
                     Some(
-                        "organizer_add" | "organizer_update" | "organizer_list" | "organizer_clock"
+                        "organizer_add"
+                            | "organizer_update"
+                            | "organizer_list"
+                            | "organizer_clock"
+                            | "organizer_copy_tasks"
+                            | "organizer_set_recurrence"
                     )
                 )
         });

@@ -71,6 +71,7 @@ class EffectAssessment:
 
     authorized: bool
     requested_outcome: str
+    veto_reason: str = ""
 
     def __bool__(self):
         return self.authorized

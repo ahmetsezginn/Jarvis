@@ -79,3 +79,7 @@ class ModelOutputInvalid(JarvisBrainError):
     """Untrusted model text did not satisfy the exact intent contract."""
 
     code = "model_output_invalid"
+
+
+class ModelStepSyntaxInvalid(ModelOutputInvalid):
+    """A provider could not decode its proposed next step; no tool was dispatched."""

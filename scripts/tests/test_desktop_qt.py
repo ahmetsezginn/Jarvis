@@ -36,6 +36,439 @@ def controller(app):
     return value, calls, sent
 
 
+def startup_controller(app, microphone_name="BSX"):
+    value = desktop.Controller(
+        launch_worker=False, startup_voice=True, microphone_name=microphone_name
+    )
+    calls, sent, messages = [], [], []
+    value.core = lambda tool, args, callback: calls.append((tool, args, callback))
+    value.send = sent.append
+    value.message.connect(lambda role, text: messages.append((role, text)))
+    return value, calls, sent, messages
+
+
+def worker_event(value, event):
+    import json
+    from types import SimpleNamespace
+
+    worker = value.worker
+    value.worker = SimpleNamespace(
+        readAllStandardOutput=lambda: (json.dumps(event) + "\n").encode()
+    )
+    try:
+        value.read_worker()
+    finally:
+        value.worker = worker
+
+
+@pytest.mark.skipif(
+    os.environ.get("JARVIS_RUN_DESKTOP_PRELOAD_LIVE") != "1",
+    reason="explicit real local 9B startup and first reply; pause wake service first",
+)
+def test_real_model_preloads_without_a_user_message_and_first_reply_uses_it(app):
+    import json
+
+    started = time.monotonic()
+    value = desktop.Controller()
+    value.voice_enabled = False
+    messages = []
+    value.message.connect(lambda role, text: messages.append((role, text)))
+    ticks = 0
+    try:
+        deadline = started + 60
+        while (value.modelLoading or value.busy) and time.monotonic() < deadline:
+            QTest.qWait(25)
+            ticks += 1
+            assert value.status not in {"Needs attention", "Offline"}, messages
+        prepared = time.monotonic()
+        assert not value.modelLoading and value._model_load_ms is not None
+        assert not messages and ticks > 0  # No user message was required to load.
+        value.send(
+            "Say hello in one short sentence. Do not inspect or change my computer."
+        )
+        assert value.status == "Thinking"
+        deadline = time.monotonic() + 90
+        while value.busy and time.monotonic() < deadline:
+            QTest.qWait(25)
+        assert value.status == "Ready" and any(
+            role == "assistant" for role, _ in messages
+        )
+        result = {
+            "model_load_ms": value._model_load_ms,
+            "desktop_to_prepared_ms": (prepared - started) * 1000,
+            "first_reply_after_prepared_ms": (time.monotonic() - prepared) * 1000,
+            "qt_event_ticks_during_preload": ticks,
+        }
+        (ROOT / "target/desktop-preload-live.json").write_text(
+            json.dumps(result, indent=2)
+        )
+        print("Real startup preload:", json.dumps(result), flush=True)
+    finally:
+        value.shutdown()
+        deadline = time.monotonic() + 10
+        while value._calls and time.monotonic() < deadline:
+            QTest.qWait(25)
+        assert value.worker.state() == desktop.QProcess.NotRunning
+
+
+def activating_controller(app):
+    value, calls, sent, messages = startup_controller(app, microphone_name="")
+    now = [100.0]
+    value._startup_clock = lambda: now[0]
+    worker_event(value, {"event": "ready", "model_loading": True})
+    calls[-1][2]({"devices": [{"index": 0, "name": "Default"}]}, None)
+    return value, calls, sent, messages, now
+
+
+def test_activation_countdown_never_opens_microphone_or_claims_readiness_on_timeout(
+    app,
+):
+    value, calls, sent, messages, now = activating_controller(app)
+    assert "8 saniye" in value.startupNote and "Tahmini 8 saniye" in messages[0][1]
+    calls[-1][2]({"queued": True}, None)
+    value.pollVoice()
+    calls[-1][2]({"speaking": False, "output_phase": "idle"}, None)
+    for elapsed in [3.1, 8, 15]:
+        now[0] = 100 + elapsed
+        value.startVoice(-1)
+        value.resume_automatic()
+        assert not value.recording and value.modelLoading
+    assert "Hazırlık devam ediyor" in value.startupNote
+    assert not any(tool == "speech_start" for tool, _, _ in calls) and not sent
+    assert not any(text.startswith("Sistem aktif.") for _, text in messages)
+    value.startup_timer.stop()
+
+
+def test_actual_readiness_replaces_stale_countdown_speech_and_waits_for_welcome(app):
+    value, calls, sent, messages, _now = activating_controller(app)
+    stale_speech = calls[-1]
+    worker_event(value, {"event": "model_ready", "load_time_ms": 1200})
+    assert not value.modelLoading and not value.startup_timer.isActive()
+    assert calls[-2][0] == "speech_stop"
+    assert calls[-1][:2] == (
+        "speech_speak",
+        {"text": "Sistem aktif. Merhaba, nasıl yardımcı olabilirim?", "language": "tr"},
+    )
+    stale_speech[2](
+        {"queued": True}, None
+    )  # Late preparation acknowledgement is obsolete.
+    assert value._speech_pending and not value.recording
+    calls[-1][2]({"queued": True}, None)
+    value.pollVoice()
+    calls[-1][2]({"speaking": True, "output_phase": "speaking"}, None)
+    value.resume_automatic()
+    assert not value.recording
+    value.pollVoice()
+    calls[-1][2]({"speaking": False, "output_phase": "idle"}, None)
+    value.resume_automatic()
+    assert calls[-1][:2] == ("speech_start", {"automatic": True}) and not sent
+    worker_event(value, {"event": "model_ready"})
+    assert len([text for _, text in messages if text.startswith("Sistem aktif.")]) == 1
+    value._automatic = False
+    value.poll_timer.stop()
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_cancel_or_failed_activation_never_records_or_rearms_on_late_ready(
+    app, failure
+):
+    value, calls, sent, messages, _now = activating_controller(app)
+    if failure:
+        worker_event(
+            value, {"event": "error", "stage": "model_load", "message": "No model"}
+        )
+    else:
+        value.setAutomatic(False, -1)
+    worker_event(value, {"event": "model_ready"})
+    assert not value.automatic and not sent
+    assert not any(tool in {"speech_start", "speech_finish"} for tool, _, _ in calls)
+    assert not any(text.startswith("Sistem aktif.") for _, text in messages)
+
+
+def test_manual_hold_cannot_start_until_preload_completes(app):
+    value, calls, _sent = controller(app)
+    value._model_loading = True
+    value.startVoice(-1)
+    assert not calls and not value.recording
+    worker_event(value, {"event": "model_ready"})
+    value.startVoice(-1)
+    assert calls[-1][:2] == ("speech_start", {})
+    calls[-1][2]({"recording_id": "manual"}, None)
+    value.finishVoice()
+    assert (
+        calls[-1][0] == "speech_finish"
+    )  # Release still ends manual capture immediately.
+    value.poll_timer.stop()
+
+
+def test_activation_waits_for_device_discovery_even_if_model_finishes_first(app):
+    value, calls, sent, messages = startup_controller(app, microphone_name="")
+    worker_event(value, {"event": "ready", "model_loading": True})
+    discovery = calls[-1]
+    worker_event(value, {"event": "model_ready"})
+    value.resume_automatic()
+    assert not messages and not sent and calls[-1] == discovery
+    discovery[2]({"devices": []}, None)
+    assert calls[-1][0] == "speech_speak" and messages[-1][1].startswith(
+        "Sistem aktif."
+    )
+    value._automatic = False
+
+
+def test_qml_countdown_is_estimated_and_stops_at_actual_readiness(app):
+    from PySide6.QtCore import QObject
+
+    value, calls, _sent, _messages, now = activating_controller(app)
+    engine = QQmlApplicationEngine()
+    warnings = []
+    engine.warnings.connect(
+        lambda values: warnings.extend(str(item) for item in values)
+    )
+    engine.rootContext().setContextProperty("jarvis", value)
+    engine.load(QUrl.fromLocalFile(str(ROOT / "services/desktop/Main.qml")))
+    window = engine.rootObjects()[0]
+    status = window.findChild(QObject, "startupStatus")
+    assert "Tahmini kalan: 8 saniye" in status.property("text")
+    now[0] += 5
+    value.changed.emit()
+    assert "3 saniye" in status.property("text")
+    now[0] += 10
+    value.changed.emit()
+    assert "Hazırlık devam ediyor" in status.property("text")
+    assert not any(tool == "speech_start" for tool, _, _ in calls)
+    worker_event(value, {"event": "model_ready"})
+    assert "Tahmini kalan" not in status.property("text") and not warnings
+    value._automatic = False
+    value.poll_timer.stop()
+    window.close()
+
+
+def test_worker_exit_during_activation_cannot_greet_after_late_device_discovery(app):
+    value, calls, sent, messages = startup_controller(app, microphone_name="")
+    worker_event(value, {"event": "ready", "model_loading": True})
+    discovery = calls[-1]
+    value.worker_finished()
+    discovery[2]({"devices": []}, None)
+    worker_event(value, {"event": "model_ready"})
+    assert value.status == "Offline" and not value.automatic
+    assert not messages and not sent
+    assert not any(tool in {"speech_speak", "speech_start"} for tool, _, _ in calls)
+
+
+def test_startup_greeting_finishes_before_turkish_auto_capture_on_selected_mic(app):
+    value, calls, sent, messages = startup_controller(app)
+    value.resume_automatic()
+    assert not calls  # Device discovery has not completed.
+    value.device_status({"devices": [{"index": 2, "name": "BSX"}]}, None)
+    assert value.automatic and value.recognitionLanguage == value.replyLanguage == "tr"
+    assert calls[-1][:2] == (
+        "speech_speak",
+        {"text": "Sistem aktif. Merhaba, nasıl yardımcı olabilirim?", "language": "tr"},
+    )
+    value.resume_automatic()
+    assert not value.recording
+    calls[-1][2]({"queued": True}, None)
+    value.pollVoice()
+    calls[-1][2]({"speaking": True, "output_phase": "queued"}, None)
+    value.resume_automatic()
+    assert not value.recording
+    value.pollVoice()
+    calls[-1][2]({"speaking": True, "output_phase": "speaking"}, None)
+    value.resume_automatic()
+    assert not value.recording
+    value.pollVoice()
+    calls[-1][2]({"speaking": False, "output_phase": "idle"}, None)
+    value.resume_automatic()
+    assert calls[-1][:2] == ("speech_start", {"device_index": 2, "automatic": True})
+    calls[-1][2]({"recording_id": "turn", "input": {"name": "BSX"}}, None)
+    value.finishVoice()
+    assert calls[-1][:2] == (
+        "speech_finish",
+        {"recording_id": "turn", "language": "tr"},
+    )
+    calls[-1][2]({"text": "Merhaba", "language": "tr"}, None)
+    value.device_status({}, None)
+    assert messages == [
+        ("assistant", "Sistem aktif. Merhaba, nasıl yardımcı olabilirim?")
+    ] and sent == ["Merhaba"]
+    value._automatic = False
+    value.poll_timer.stop()
+
+
+@pytest.mark.parametrize("failure", ["discovery", "missing", "duplicate", "output"])
+def test_startup_errors_never_silently_open_another_mic(app, failure):
+    value, calls, sent, messages = startup_controller(app)
+    data = {"devices": [{"index": 2, "name": "BSX"}]}
+    if failure == "missing":
+        data["devices"] = [{"index": 0, "name": "Other microphone"}]
+    elif failure == "duplicate":
+        data["devices"].append({"index": 3, "name": "BSX"})
+    value.device_status(data, "Core unavailable" if failure == "discovery" else None)
+    if failure == "output":
+        calls[-1][2](None, "Turkish voice unavailable")
+    assert value.status == "Needs attention" and not value.automatic
+    assert not sent and not any(tool == "speech_start" for tool, _, _ in calls)
+    assert messages[-1][0] == "system"
+
+
+def test_disabling_auto_before_discovery_prevents_delayed_startup(app):
+    value, calls, sent, messages = startup_controller(app)
+    value.setAutomatic(False, -1)
+    value.device_status({"devices": [{"index": 2, "name": "BSX"}]}, None)
+    value.resume_automatic()
+    assert not value.automatic and not value.recording and not sent and not messages
+    assert not any(tool in {"speech_start", "speech_speak"} for tool, _, _ in calls)
+
+
+def test_windows_default_startup_does_not_pin_an_enumerated_microphone(app):
+    value, calls, _sent, _messages = startup_controller(app, microphone_name="")
+    value.device_status({"devices": [{"index": 0, "name": "Built in"}]}, None)
+    calls[-1][2]({"queued": True}, None)
+    value.pollVoice()
+    calls[-1][2]({"speaking": False, "output_phase": "idle"}, None)
+    value.resume_automatic()
+    assert value.inputDevice == -1
+    assert calls[-1][:2] == ("speech_start", {"automatic": True})
+    value._automatic = False
+    value.poll_timer.stop()
+
+
+@pytest.mark.parametrize("stop_while_switching", [False, True])
+def test_default_input_change_discards_partial_turn_before_rearming(
+    app, stop_while_switching
+):
+    value, calls, sent = controller(app)
+    value.setAutomatic(True, -1)
+    calls[-1][2]({"recording_id": "old-route"}, None)
+    value.pollVoice()
+    calls[-1][2]({"phase": "error", "input_changed": True}, None)
+    assert calls[-1][:2] == ("speech_cancel", {"recording_id": "old-route"})
+    teardown = calls[-1]
+    assert not value.recording and value.status == "Switching microphone" and not sent
+    value.resume_automatic()
+    assert calls[-1] == teardown  # Must wait for the old stream to release.
+    if stop_while_switching:
+        value.setAutomatic(False, -1)
+    teardown[2]({"cancelled": True}, None)
+    value.resume_automatic()
+    starts = [args for tool, args, _ in calls if tool == "speech_start"]
+    assert starts == [{"automatic": True}] * (1 if stop_while_switching else 2)
+    assert not any(tool == "speech_finish" for tool, _, _ in calls) and not sent
+    value._automatic = False
+    value.poll_timer.stop()
+
+
+def test_explicit_microphone_error_does_not_switch_to_default(app):
+    value, calls, sent = controller(app)
+    value.setAutomatic(True, 2)
+    calls[-1][2]({"recording_id": "fixed"}, None)
+    value.pollVoice()
+    calls[-1][2](
+        {"phase": "error", "input_changed": True, "error": "Disconnected"}, None
+    )
+    assert not value.automatic and not sent
+    assert calls[-1][:2] == ("speech_cancel", {"recording_id": "fixed"})
+
+
+def test_startup_qml_shows_turkish_and_selected_device_without_binding_errors(app):
+    from PySide6.QtCore import QObject
+
+    value, _calls, _sent, _messages = startup_controller(app)
+    engine = QQmlApplicationEngine()
+    warnings = []
+    engine.warnings.connect(
+        lambda values: warnings.extend(str(item) for item in values)
+    )
+    engine.rootContext().setContextProperty("jarvis", value)
+    engine.load(QUrl.fromLocalFile(str(ROOT / "services/desktop/Main.qml")))
+    value.device_status({"devices": [{"index": 2, "name": "BSX"}]}, None)
+    QTest.qWait(20)
+    window = engine.rootObjects()[0]
+    assert (
+        window.findChild(QObject, "recognitionLanguage").property("currentIndex") == 1
+    )
+    assert window.findChild(QObject, "replyVoice").property("currentIndex") == 1
+    assert window.findChild(QObject, "inputDevice").property("currentIndex") == 1
+    assert window.findChild(QObject, "autoConversation").property("checked")
+    assert not warnings
+    value._automatic = False
+    window.close()
+
+
+@pytest.mark.skipif(
+    os.environ.get("JARVIS_RUN_DESKTOP_STARTUP_LIVE") != "1",
+    reason="explicit real startup speech/microphone; pause wake service first",
+)
+def test_real_startup_worker_greeting_completes_before_selected_microphone_opens(app):
+    microphone = os.environ.get("JARVIS_DESKTOP_MICROPHONE", "")
+    value = desktop.Controller(startup_voice=True, microphone_name=microphone)
+    messages, polls, captures, requests = [], [], [], []
+    value.message.connect(lambda role, text: messages.append((role, text)))
+    real_core = value.core
+    value.send = requests.append  # No captured words may execute actions in this probe.
+
+    def traced_core(tool, arguments, callback):
+        if tool == "speech_start":
+            assert not value.modelLoading and value._model_load_ms is not None
+            assert not value.startup_timer.isActive()
+            assert messages[-1] == (
+                "assistant",
+                "Sistem aktif. Merhaba, nasıl yardımcı olabilirim?",
+            )
+            assert polls and polls[-1].get("output_phase") == "idle", polls
+            assert not value._speech_pending and not value._speaking
+
+        def completed(data, error):
+            if tool == "speech_poll" and not arguments and data:
+                polls.append(dict(data))
+            callback(data, error)
+            if tool == "speech_start" and not error:
+                captures.append(data)
+                value.setAutomatic(False, -1)  # Immediately discard test capture.
+
+        real_core(tool, arguments, completed)
+
+    value.core = traced_core
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("jarvis", value)
+    engine.load(QUrl.fromLocalFile(str(ROOT / "services/desktop/Main.qml")))
+    window = engine.rootObjects()[0]
+    try:
+        deadline = time.monotonic() + 35
+        while not captures and time.monotonic() < deadline:
+            QTest.qWait(25)
+            assert value.status not in {"Needs attention", "Offline"}, messages
+        assert captures and any(row.get("output_phase") == "speaking" for row in polls)
+        if microphone:
+            assert captures[0]["input"]["name"] == microphone
+        else:
+            assert value.inputDevice == -1
+            assert any(
+                row["name"] == captures[0]["input"]["name"] for row in value._devices
+            )
+        assert any(text.startswith("Sistem aktifleştiriliyor.") for _, text in messages)
+        assert (
+            sum(
+                text == "Sistem aktif. Merhaba, nasıl yardımcı olabilirim?"
+                for _, text in messages
+            )
+            == 1
+        )
+        assert not requests
+        assert value.recognitionLanguage == value.replyLanguage == "tr"
+        assert "Tolga" in value.outputNote, value.outputNote
+        print(
+            "Real Turkish startup:", value.outputNote, captures[0]["input"], flush=True
+        )
+    finally:
+        value.shutdown()
+        deadline = time.monotonic() + 10
+        while value._calls and time.monotonic() < deadline:
+            QTest.qWait(25)
+        assert not value._calls
+        window.close()
+
+
 def lifecycle(app):
     from types import SimpleNamespace
 
@@ -562,7 +995,7 @@ def test_normal_qml_agent_reply_finishes_before_auto_rearm(app):
     window = engine.rootObjects()[0]
     try:
         deadline = time.monotonic() + 20
-        while value.busy and time.monotonic() < deadline:
+        while (value.busy or value.modelLoading) and time.monotonic() < deadline:
             QTest.qWait(50)
         assert value.status == "Ready", messages
         composer = window.findChild(QQuickItem, "composer")

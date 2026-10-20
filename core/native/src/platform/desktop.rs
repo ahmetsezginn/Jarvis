@@ -5,6 +5,14 @@ use serde::{Deserialize, Serialize};
 use crate::{apps::DiscoveredApplication, core::JarvisError};
 
 pub trait DesktopPlatform: Send + Sync {
+    fn open_game_shortcut(
+        &self,
+        _target: &crate::files::GameShortcutTarget,
+    ) -> Result<(), JarvisError> {
+        Err(JarvisError::PlatformUnsupported {
+            platform: "Steam game shortcut".into(),
+        })
+    }
     fn open_application(&self, application: &DiscoveredApplication) -> Result<(), JarvisError>;
     fn open_folder(&self, path: &Path) -> Result<(), JarvisError>;
     fn open_file(&self, _path: &Path) -> Result<(), JarvisError> {

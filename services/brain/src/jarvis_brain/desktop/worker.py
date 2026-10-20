@@ -5,6 +5,7 @@ No shell, executable selection or device access. Qt and CLI share JarvisBrain.
 
 import json
 import sys
+import time
 from uuid import uuid4
 
 from jarvis_brain.core.client import JarvisCoreClient
@@ -87,27 +88,44 @@ class Session:
         }
 
 
+def serve(core, model, source, emit):
+    session = Session(core, model)
+    # The separate process can load while Qt announces activation. Requests already written
+    # to its bounded pipe wait here; no second model thread or concurrent inference.
+    emit({"event": "ready", "model_loading": True})
+    started = time.perf_counter()
+    try:
+        model.load()
+    except JarvisBrainError as error:
+        emit({"event": "error", "stage": "model_load", "message": str(error)[:500]})
+        return 1
+    emit({"event": "model_ready", "load_time_ms": (time.perf_counter() - started) * 1000})
+    while line := source.readline(32769):
+        try:
+            if len(line) > 32768 or not line.endswith(b"\n"):
+                raise ValueError("Desktop message exceeds limit")
+            request = json.loads(line)
+            result = session.request(request)
+            emit({"event": "response", **result})
+        except (JarvisBrainError, ValueError, TypeError) as error:
+            # Never replay a failed operation or fall back to old intent execution.
+            emit({"event": "error", "message": str(error)[:500]})
+    return 0
+
+
 def main():
     model = create_agent_model()
     try:
         with JarvisCoreClient(request_timeout=120) as core:
-            session = Session(core, model)
-            print(json.dumps({"event": "ready"}), flush=True)
-            while line := sys.stdin.buffer.readline(32769):
-                try:
-                    if len(line) > 32768 or not line.endswith(b"\n"):
-                        raise ValueError("Desktop message exceeds limit")
-                    request = json.loads(line)
-                    result = session.request(request)
-                    print(
-                        json.dumps({"event": "response", **result}, ensure_ascii=False), flush=True
-                    )
-                except (JarvisBrainError, ValueError, TypeError) as error:
-                    # Never replay a failed operation or fall back to old intent execution.
-                    print(json.dumps({"event": "error", "message": str(error)[:500]}), flush=True)
+            return serve(
+                core,
+                model,
+                sys.stdin.buffer,
+                lambda event: print(json.dumps(event, ensure_ascii=False), flush=True),
+            )
     finally:
         model.unload()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

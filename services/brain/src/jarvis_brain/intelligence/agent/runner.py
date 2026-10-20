@@ -10,8 +10,9 @@ import threading
 import time
 from dataclasses import asdict
 
-from jarvis_brain.errors import ModelOutputInvalid
+from jarvis_brain.errors import ModelOutputInvalid, ModelStepSyntaxInvalid
 from jarvis_brain.intelligence.agent.capabilities import BuiltinCapabilities, execute_capability
+from jarvis_brain.intelligence.agent.registry import ReplyTooLong
 from jarvis_brain.intelligence.contract import BrainResponse, IntentName
 from jarvis_brain.intelligence.conversation import ConversationMemory
 from jarvis_brain.intelligence.models.base import EffectAssessment
@@ -176,6 +177,10 @@ class AgentRuntime:
         completed_actions = False
         performed = False
         reviewed_answers = set()
+        reply_repairs = 0
+        reply_only = False
+        plan_repairs = 0
+        action_attempted = False
         for _ in range(self.max_steps):
             snapshot = {
                 **initial,
@@ -185,14 +190,63 @@ class AgentRuntime:
                 },
                 "turn_events": turn_events,
             }
-            raw = self.model.next_step(
-                copy.deepcopy(snapshot),
-                self.registry.descriptions(),
-                self.registry.schema(),
-                self.context,
-            )
+            try:
+                raw = self.model.next_step(
+                    copy.deepcopy(snapshot),
+                    self.registry.descriptions(),
+                    self.registry.schema(),
+                    self.context,
+                )
+            except ModelStepSyntaxInvalid:
+                if plan_repairs or action_attempted or reply_only:
+                    if completed_displays:
+                        progress = "\n".join(value for value, _ in completed_displays)
+                        if display and all(value != display for value, _ in completed_displays):
+                            progress += "\n" + display
+                        return self._response(
+                            text,
+                            "The next model step was invalid. Completed earlier:\n" + progress,
+                            performed=performed,
+                            memory_message="A malformed next step was stopped; earlier "
+                            "completed operations were reported.",
+                            conversation_display=conversation_display
+                            or any(flag for _, flag in completed_displays),
+                        )
+                    raise
+                plan_repairs += 1
+                initial["response_feedback"] = {
+                    "structured_selection": True,
+                    "message": "No action was dispatched for the malformed proposal. "
+                    "Select a fresh valid next step from the registered schema using the "
+                    "current request and verified facts. This is not permission; "
+                    "do not invent parameters or repeat earlier tools.",
+                }
+                continue
             initial.pop("response_feedback", None)  # One decision, never a sticky routing mode.
-            step = self.registry.parse(raw)
+            try:
+                step = self.registry.parse(raw)
+            except ReplyTooLong:
+                # Redraft prose only. No invalid tool call, IPC error or effect is retried.
+                if reply_repairs:
+                    return self._response(
+                        text,
+                        "I could not produce a concise reply."
+                        + ("\n" + display if display else ""),
+                        performed=performed,
+                        memory_message="Reply limit reached; current results remain available.",
+                        conversation_display=conversation_display,
+                    )
+                reply_repairs += 1
+                reply_only = True
+                initial["response_feedback"] = {
+                    "required_actions": ["answer"],
+                    "message": "The prose draft exceeded 1024 characters. Answer briefly in "
+                    "one or two sentences within that limit. This is a presentation correction, "
+                    "not permission for any operation. Do not call or repeat tools.",
+                }
+                continue
+            if reply_only and step.action != "answer":
+                raise ModelOutputInvalid("presentation repair may only answer")
             self.trace.append({"step": step.action, "arguments": step.arguments})
             if step.action == "answer":
                 # Read-only omission review. It may request another model decision, never
@@ -292,6 +346,26 @@ class AgentRuntime:
                 if type(authorized) is not bool:
                     raise ModelOutputInvalid("invalid current-request authorization")
                 if not authorized:
+                    if (
+                        isinstance(assessment, EffectAssessment)
+                        and assessment.veto_reason == "prohibition"
+                    ):
+                        message = "I won't make those changes."
+                        if completed_displays:
+                            message += "\nCompleted earlier in this turn:\n" + "\n".join(
+                                value for value, _ in completed_displays
+                            )
+                        if display and all(value != display for value, _ in completed_displays):
+                            message += "\n" + display
+                        return self._response(
+                            text,
+                            message,
+                            performed=performed,
+                            memory_message="A prohibited action was stopped; earlier verified "
+                            "results, if any, were reported.",
+                            conversation_display=conversation_display
+                            or any(flag for _, flag in completed_displays),
+                        )
                     turn_events.append(
                         {
                             "action": step.action,
@@ -309,6 +383,7 @@ class AgentRuntime:
                         }
                     )
                     continue
+            action_attempted |= capability.effect != "observe"
             observation = execute_capability(capability, step.arguments)
             if observation.retryable:
                 seen.discard(signature)  # Only explicitly nonexecuting, in-memory transitions.

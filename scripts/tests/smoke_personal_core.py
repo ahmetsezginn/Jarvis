@@ -21,8 +21,11 @@ def main():
         )
     data_root.mkdir()
     env = {**os.environ, "LOCALAPPDATA": str(data_root)}
+    calls = 0
 
     def invoke(tool, args, *, expected="success"):
+        nonlocal calls
+        calls += 1
         result = subprocess.run(
             [str(executable), "tool", tool, json.dumps(args)],
             cwd=root,
@@ -64,8 +67,90 @@ def main():
     assert invoke("organizer_list", {"kind": "task", "status": "done"})["total"] == 1
     assert "green box" in invoke("organizer_list", {"kind": "note"})["items"][0]["body"]
     invoke("organizer_update", update, expected="failed")
+
+    for title in (
+        "Routines smoke: review",
+        "Routines smoke: practice",
+        "Routines smoke: prepare",
+    ):
+        invoke(
+            "organizer_add", {"kind": "task", "title": title, "due_date": "yesterday"}
+        )
+    copy = {"source_date": "yesterday", "target_date": "today", "expected_count": 3}
+    copied = invoke("organizer_copy_tasks", copy)
+    assert copied["copied"] == 3 and all(i["status"] == "open" for i in copied["items"])
+    assert invoke("organizer_copy_tasks", copy)["already_present"] == 3
+    invoke("organizer_copy_tasks", {**copy, "expected_count": 2}, expected="failed")
+    assert invoke("organizer_list", {"kind": "task", "period": "today"})["total"] == 3
+    bindings = [
+        {"record_id": i["record_id"], "expected_version": i["version"]}
+        for i in copied["items"]
+    ]
+    repeated = invoke(
+        "organizer_set_recurrence", {"items": bindings, "recurrence": "daily"}
+    )["items"]
+    assert (
+        invoke(
+            "organizer_list",
+            {"kind": "task", "period": "tomorrow", "query": "Routines smoke"},
+        )["total"]
+        == 3
+    )
+    bindings = [
+        {
+            "record_id": i["record_id"],
+            "expected_version": i["version"],
+            "occurrence_date": i["occurrence_date"],
+        }
+        for i in repeated
+    ]
+    invoke("organizer_set_recurrence", {"items": bindings, "recurrence": "none"})
+    assert (
+        invoke(
+            "organizer_list",
+            {"kind": "task", "period": "tomorrow", "query": "Routines smoke"},
+        )["total"]
+        == 0
+    )
+    daily = invoke(
+        "organizer_add",
+        {"kind": "task", "title": "Daily smoke reading", "recurrence": "daily"},
+    )["item"]
+    binding = {
+        "record_id": daily["record_id"],
+        "expected_version": 1,
+        "occurrence_date": daily["occurrence_date"],
+    }
+    done = invoke("organizer_update", {**binding, "status": "done"})["item"]
+    tomorrow = invoke(
+        "organizer_list", {"kind": "task", "period": "tomorrow", "query": "Daily smoke"}
+    )
+    assert tomorrow["total"] == 1 and tomorrow["items"][0]["status"] == "open"
+    invoke(
+        "organizer_update",
+        {**binding, "expected_version": done["version"], "recurrence": "none"},
+    )
+    assert (
+        invoke(
+            "organizer_list",
+            {"kind": "task", "period": "tomorrow", "query": "Daily smoke"},
+        )["total"]
+        == 0
+    )
+    assert (
+        invoke(
+            "organizer_list",
+            {
+                "kind": "task",
+                "period": "today",
+                "status": "done",
+                "query": "Daily smoke",
+            },
+        )["total"]
+        == 1
+    )
     print(
-        f"Native personal smoke passed: 11 separate Core processes, local date {clock['local_date']}; isolated test data only."
+        f"Native personal smoke passed: {calls} separate Core processes, local date {clock['local_date']}; isolated test data only."
     )
 
 

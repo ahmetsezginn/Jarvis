@@ -1,9 +1,11 @@
 //! Scoped metadata catalog. Paths and filesystem authority never originate in model output.
 mod catalog;
+mod shortcut;
 #[cfg(windows)]
 mod windows;
 
 pub use catalog::{FileCatalog, FileEntry, FileKind, FileRoot, SearchArguments};
+pub use shortcut::GameShortcutTarget;
 
 pub fn configured_roots() -> Result<Vec<FileRoot>, crate::core::JarvisError> {
     if let Some(path) = std::env::var_os("JARVIS_FILES_CONFIG") {

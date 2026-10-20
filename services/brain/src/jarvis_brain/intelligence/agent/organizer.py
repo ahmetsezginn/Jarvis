@@ -17,7 +17,11 @@ from jarvis_brain.intelligence.file_reference import numbered_reference
 
 NUMBER = {"type": "integer", "minimum": 1, "maximum": 5}
 DATE = text_schema(
-    10, description="today, tomorrow, YYYY-MM-DD, or none for no date. Dates only; no timed alarms."
+    10, description="yesterday, today, tomorrow, YYYY-MM-DD, or none for no date. No timed alarms."
+)
+RECURRENCE = text_schema(
+    enum=["none", "daily"],
+    description="daily repeats each local calendar day; none is one-time or stops future repeats.",
 )
 
 
@@ -40,6 +44,7 @@ class OrganizerCapabilities:
         self.expires = 0
         self.query = None
         self.next_offset = None
+        self.page_complete = False
 
     def register(self, registry):
         self.registry = registry
@@ -47,7 +52,8 @@ class OrganizerCapabilities:
             Capability(
                 "personal_clock",
                 "Get the computer's current LOCAL date, weekday and time before "
-                "calculating calendar dates. Personal tools also understand today/tomorrow.",
+                "calculating calendar dates. Personal tools also understand "
+                "yesterday/today/tomorrow.",
                 object_schema(),
                 lambda args: Observation(self.call("organizer_clock", {})),
                 requires=("organizer_clock",),
@@ -61,13 +67,15 @@ class OrganizerCapabilities:
                 "note down or add it. Tasks are things to do; notes store information. "
                 "Preserve the user's language and meaning. Omit due_date for undated tasks; "
                 "never invent a deadline. Notes have no due_date. Saves across restarts; "
-                "this is NOT an alarm or file operation.",
+                "this is NOT an alarm or file operation. recurrence=daily saves a daily routine; "
+                "due_date is its start date, default today when omitted. No background alarm.",
                 object_schema(
-                    optional=("body", "due_date"),
+                    optional=("body", "due_date", "recurrence"),
                     kind=text_schema(enum=["task", "note"]),
                     title=text_schema(160, format="text", minLength=1),
                     body=text_schema(512, format="text", default=""),
                     due_date=DATE,
+                    recurrence=RECURRENCE,
                 ),
                 self.add,
                 "act",
@@ -81,25 +89,35 @@ class OrganizerCapabilities:
                 "Read saved personal tasks/notes; NOT filesystem discovery. "
                 "Use tasks for what to do today, plans and completed work; "
                 "notes for remembered information. "
-                "period: today/tomorrow/date are EXACT dates. overdue is before today; "
+                "period: yesterday/today/tomorrow/date are EXACT dates. overdue is before today; "
                 "undated has no date; all is all dates. Keep overdue/undated out of today's list. "
                 "query is optional remembered text; omit for a day agenda. status defaults open. "
                 "Returns five numbered rows and total. next_page=true continues the last list. "
                 "List before updating, so its number comes from verified records. "
+                "When editing completed work or stopping a routine, include status=all; "
+                "today's occurrence may already be done. "
                 "Never invent saved tasks.",
                 object_schema(
                     optional=("status", "period", "date", "query", "next_page"),
                     kind=text_schema(enum=["task", "note"]),
                     status=text_schema(enum=["open", "done", "archived", "all"], default="open"),
                     period=text_schema(
-                        enum=["all", "today", "tomorrow", "overdue", "undated", "date"],
+                        enum=[
+                            "all",
+                            "yesterday",
+                            "today",
+                            "tomorrow",
+                            "overdue",
+                            "undated",
+                            "date",
+                        ],
                         default="all",
-                        description="Choose the requested subset: today, tomorrow, date, "
+                        description="Choose: yesterday, today, tomorrow, date, "
                         "undated (no due date), overdue (before today), or all (all dates). "
                         "For date also supply date=YYYY-MM-DD. Notes require all; "
                         "a word in the note's name belongs in query, not period.",
                     ),
-                    date=text_schema(10, pattern=r"[0-9]{4}-[0-9]{2}-[0-9]{2}"),
+                    date=text_schema(10, pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"),
                     query=text_schema(160, format="text", default=""),
                     next_page={"type": "boolean", "default": False},
                 ),
@@ -115,20 +133,72 @@ class OrganizerCapabilities:
                 "No deletion. due_date reschedules; none removes its date. title/body replace "
                 "ONLY that field "
                 "when requested. Notes cannot be completed or dated. If ambiguous, ask "
-                "which item; do not guess or change all items. Requires a current change request.",
+                "which item; do not guess. recurrence=daily repeats an open task from its date "
+                "(today if undated); none stops future repeats after the selected day. For a daily "
+                "task status/title/body change ONLY the selected day; rescheduling is unsupported. "
+                "Completing today never completes tomorrow. Requires a current change request.",
                 object_schema(
-                    optional=("status", "due_date", "title", "body"),
+                    optional=("status", "due_date", "title", "body", "recurrence"),
                     number=NUMBER,
                     status=text_schema(enum=["open", "done", "archived"]),
                     due_date=DATE,
                     title=text_schema(160, format="text", minLength=1),
                     body=text_schema(512, format="text"),
+                    recurrence=RECURRENCE,
                 ),
                 self.update,
                 "act",
                 "Update the selected saved personal item with the requested NEW field values",
                 requires=("organizer_update",),
                 authorization_view=self.target_view,
+            )
+        )
+        registry.register(
+            Capability(
+                "set_personal_recurrence",
+                "Set the SAME daily/none recurrence on ALL tasks in a complete current verified "
+                "selection (two to five tasks). Use this for making several displayed tasks daily "
+                "or stopping their repetition, instead of multiple separate update calls. "
+                "First list the requested day/selection, or use freshly copied tasks. "
+                "expected_count must match the user's count or the verified selection count. "
+                "No partial pages, notes, invented tasks or guessing a subset. Atomic: any stale "
+                "binding fails the entire group. none stops after each selected day.",
+                object_schema(
+                    recurrence=RECURRENCE,
+                    expected_count={"type": "integer", "minimum": 2, "maximum": 5},
+                ),
+                self.set_recurrence,
+                "act",
+                "Set the requested recurrence on every task in this verified complete selection",
+                requires=("organizer_set_recurrence",),
+                authorization_view=lambda args: {
+                    "items": self.view().get("items", []),
+                    "complete_selection": self.page_complete,
+                },
+                available=self.group_available,
+            )
+        )
+        registry.register(
+            Capability(
+                "copy_personal_tasks",
+                "Copy ALL non-archived tasks from one saved day to another, keeping titles/body "
+                "but making NEW one-time open tasks. Originals and completion stay unchanged. "
+                "Use for repeating yesterday's agenda today, rather than moving it or adding "
+                "invented titles. expected_count is required: use the user's explicit count, "
+                "otherwise list the source day with status=all and use copyable_total. A count "
+                "mismatch writes nothing. Already copied tasks and daily routines already "
+                "scheduled for the target day are not duplicated. Not for a subset or ongoing "
+                "recurrence; use add/update recurrence=daily for that.",
+                object_schema(
+                    source_date=DATE,
+                    target_date=DATE,
+                    expected_count={"type": "integer", "minimum": 1, "maximum": 100},
+                ),
+                self.copy_tasks,
+                "act",
+                "Copy all saved tasks from the requested source day to the target day; "
+                "preserve originals",
+                requires=("organizer_copy_tasks",),
             )
         )
         registry.register(
@@ -162,6 +232,7 @@ class OrganizerCapabilities:
             "body": model_text(item["body"], 120),
             "due_date": item["due_date"],
             "status": item["status"],
+            "recurrence": item.get("recurrence", "none"),
         }
 
     def view(self):
@@ -191,7 +262,7 @@ class OrganizerCapabilities:
             "number": item["number"],
             "kind": item["kind"],
             "title": item["title"],
-            "current_values": {k: item[k] for k in ("body", "due_date", "status")},
+            "current_values": {k: item[k] for k in ("body", "due_date", "status", "recurrence")},
             "same_title_count": len(same_name),
         }
         if len(same_name) > 1:
@@ -204,7 +275,7 @@ class OrganizerCapabilities:
         for item in items:
             if (
                 not isinstance(item, dict)
-                or set(item)
+                or set(item) - {"recurrence", "occurrence_date"}
                 != {"record_id", "kind", "title", "body", "due_date", "status", "version"}
                 or not isinstance(item["record_id"], str)
                 or not item["record_id"]
@@ -212,6 +283,16 @@ class OrganizerCapabilities:
                 or item["status"] not in {"open", "done", "archived"}
                 or type(item["version"]) is not int
                 or item["version"] < 1
+                or item.get("recurrence", "none") not in {"none", "daily"}
+                or (
+                    "occurrence_date" in item
+                    and (
+                        item.get("kind") != "task"
+                        or not isinstance(item["occurrence_date"], str)
+                        or item["occurrence_date"] != item["due_date"]
+                    )
+                )
+                or (item.get("recurrence") == "daily" and "occurrence_date" not in item)
                 or not isinstance(item["title"], str)
                 or not 1 <= len(item["title"]) <= 160
                 or not isinstance(item["body"], str)
@@ -241,6 +322,7 @@ class OrganizerCapabilities:
                 else ""
             )
             + (f"\n{item['body']}" if item["body"] else "")
+            + (" — repeats daily" if item.get("recurrence") == "daily" else "")
             for i, item in enumerate(items, start)
         )
 
@@ -281,6 +363,13 @@ class OrganizerCapabilities:
             or not 0 <= total <= 10000
             or offset != call["offset"]
             or (
+                "copyable_total" in data
+                and (
+                    type(data["copyable_total"]) is not int
+                    or not 0 <= data["copyable_total"] <= total
+                )
+            )
+            or (
                 next_offset is not None
                 and (type(next_offset) is not int or next_offset != offset + 5)
             )
@@ -288,6 +377,7 @@ class OrganizerCapabilities:
             raise ModelOutputInvalid("invalid personal pagination")
         self.bind(data["items"])
         self.query, self.next_offset = call, next_offset
+        self.page_complete = offset == 0 and next_offset is None and total == len(self.items)
         label = (
             f"{call['kind'].title()}s — {call.get('period', 'all')} "
             f"({data['local_date']} local); {total} found."
@@ -304,6 +394,7 @@ class OrganizerCapabilities:
                 "period": call.get("period", "all"),
                 "local_date": data["local_date"],
                 "has_more": next_offset is not None,
+                **({"copyable_total": data["copyable_total"]} if "copyable_total" in data else {}),
                 "rendered_for_user": True,
             },
             display,
@@ -320,8 +411,11 @@ class OrganizerCapabilities:
             )
         item = rows[number - 1]
         expiry = self.expires
+        complete = self.page_complete
         call = {k: v for k, v in args.items() if k != "number"}
         call.update(record_id=item["record_id"], expected_version=item["version"])
+        if "occurrence_date" in item:
+            call["occurrence_date"] = item["occurrence_date"]
         # Consume before IPC. Errors/timeouts never leave a replayable mutation binding.
         self.clear()
         data = self.call("organizer_update", call)
@@ -336,9 +430,101 @@ class OrganizerCapabilities:
         # silently relabel it row 1 or discard the other still-valid items.
         self.items = [updated if i == number else row for i, row in enumerate(rows, 1)]
         self.expires = expiry
+        self.page_complete = complete
         return Observation(
             {"saved": True, "item": self.public(updated, number)},
             "Updated locally:\n" + self.render([updated], start=number),
+            performed=True,
+            conversation_display=True,
+        )
+
+    def copy_tasks(self, args):
+        self.clear()
+        data = self.call("organizer_copy_tasks", args)
+        if (
+            data.get("saved") is not True
+            or any(
+                type(data.get(k)) is not int or not 0 <= data[k] <= 100
+                for k in ("copied", "already_present", "matched")
+            )
+            or data["copied"] + data["already_present"] != data["matched"]
+        ):
+            raise ModelOutputInvalid("unconfirmed task copy")
+        self.bind(data["items"])
+        if len(self.items) != min(5, data["matched"]):
+            self.clear()
+            raise ModelOutputInvalid("invalid copied task page")
+        self.page_complete = len(self.items) == data["matched"]
+        return Observation(
+            {
+                k: data[k]
+                for k in (
+                    "saved",
+                    "source_date",
+                    "target_date",
+                    "matched",
+                    "copied",
+                    "already_present",
+                    "recurrence_copied",
+                )
+            }
+            | {
+                "items": self.view().get("items", []),
+                "has_more": data["matched"] > len(self.items),
+            },
+            f"{data['copied']} tasks copied from {data['source_date']} to {data['target_date']}; "
+            f"{data['already_present']} already copied/scheduled. Original tasks kept."
+            + ("\n" + self.render(self.items) if self.items else "")
+            + (
+                "\nShowing the first five; list the target day to see more."
+                if data["matched"] > 5
+                else ""
+            ),
+            performed=data["copied"] > 0,
+            conversation_display=True,
+        )
+
+    def group_available(self):
+        rows = self.current()
+        return (
+            self.page_complete
+            and 2 <= len(rows) <= 5
+            and len({item["record_id"] for item in rows}) == len(rows)
+            and all(i["kind"] == "task" for i in rows)
+        )
+
+    def set_recurrence(self, args):
+        rows = self.current()
+        if not self.group_available() or len(rows) != args["expected_count"]:
+            return Observation(
+                {"error": "complete_task_selection_required"},
+                "List the full intended selection before changing its recurrence.",
+                terminal=True,
+            )
+        expiry = self.expires
+        bindings = [
+            {k: item[k] for k in ("record_id", "occurrence_date") if k in item}
+            | {"expected_version": item["version"]}
+            for item in rows
+        ]
+        self.clear()
+        data = self.call(
+            "organizer_set_recurrence", {"items": bindings, "recurrence": args["recurrence"]}
+        )
+        if data.get("saved") is not True:
+            raise ModelOutputInvalid("unconfirmed recurrence group update")
+        self.bind(data["items"])
+        if len(self.items) != len(rows) or any(
+            new["record_id"] != old["record_id"] or new["version"] != old["version"] + 1
+            for old, new in zip(rows, self.items, strict=True)
+        ):
+            self.clear()
+            raise ModelOutputInvalid("recurrence group returned different bindings")
+        self.expires = expiry
+        self.page_complete = True
+        return Observation(
+            {"saved": True, "items": self.view()["items"]},
+            "Updated local recurrence:\n" + self.render(self.items),
             performed=True,
             conversation_display=True,
         )

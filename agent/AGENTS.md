@@ -433,16 +433,102 @@ When uncertain, preserve this invariant:
 
 ## Active model revision (2026-10-16)
 
+Activation-dialogue correction (2026-10-19, latest): user explicitly replaced early listening
+during preload with an open window, spoken estimated countdown, then a ready welcome and only
+THEN voice input. Block both automatic/manual capture until actual model_ready and completed
+welcome output; remove the former early-audio/deferred-ASR flow. Default host estimate is8s
+from the measured7.9s load, labelled approximate, not learned persistent history or a guarantee.
+Countdown expiry must never declare readiness; show continued preparation until the real event.
+Cancel obsolete preparation speech on readiness, announce "Sistem aktif. Merhaba, nasıl yardımcı
+olabilirim?" once, and honor mute/cancel/failure/close. All speech still uses registered Core
+tools. No always-loaded idle model or new OS/settings storage is authorized by this UI change.
+
+Steam game-shortcut correction (2026-10-19, latest): user reported a selected desktop Games
+Counter-Strike 2.url being rejected by open_file. Native open_file may adapt catalog-backed .url
+metadata ONLY for exact steam://rungameid/<positive-u32> targets, generically across Steam apps.
+Bound reads to16KiB, retain normal scope/stale/reparse checks and a stable read handle, reject
+duplicate targets, other schemes/Steam commands, flags/query/encoded parameters and non-app IDs.
+Never execute the .url itself, IconFile, arbitrary .lnk or model-supplied URI/path/app ID. A native
+typed target may invoke the registered Windows Steam handler with a rebuilt URI and fixed open
+verb; existing registry/validation/policy/audit and Brain current-request authorization remain.
+No game-specific aliases/routing, executable discovery changes or runtime post-launch probe.
+
+Desktop model-preload authorization (2026-10-19, latest): user selected preparing the model
+as soon as wake opens the assistant, instead of the first message. The user-context Brain
+worker may load immediately while Qt greets/listens, using its normal provider interface and
+checksum validation. No idle model resident in the wake service, inference server or permanent
+keep-alive. A separate model_ready event distinguishes input readiness from model readiness.
+Early typed requests wait in the existing bounded worker pipe. Completed automatic audio stays
+bounded in Rust with lease polling until model readiness, then uses existing speech_finish;
+avoid simultaneous initial LLM/ASR GPU allocation. Manual hold-to-talk stays unavailable during
+preload so release cannot extend capture. Cancellation/load failure/actual close discard pending
+audio and terminate the worker; no execution before model readiness.
+
+Microphone correction (2026-10-19, latest): user wants the Windows-selected default input,
+not the former BSX pin, for both wake and Auto conversation. Clear that installed pin explicitly.
+Default-route changes must discard old PCM/features and reacquire the new OS default; never
+transcribe or concatenate an interrupted turn across devices. Native Core may report typed
+input_changed through speech_poll so Qt can cancel/rearm through existing registered tools.
+An explicit manual fixed-device choice still must not silently switch to another device.
+
+Desktop voice startup preference (2026-10-19, latest): user explicitly requested automatic
+conversation, Turkish recognition/voice and a spoken "Dinliyorum" on opening. This supersedes
+the older automatic-listening-off-on-startup default below for the desktop entry point.
+Discover devices first, follow the Windows default input, and finish the actual
+native greeting output before opening capture. Escape/End conversation still disables listening;
+missing selected devices or failed speech must not silently use another route. No embedded wake,
+recordings or direct Python device access; existing registered Core speech tools remain mandatory.
+
+Windows-service implementation authorization (2026-10-19, latest): user explicitly requested
+pushing the existing revision FIRST, then implementing the wake Windows service as part of
+THIS project and its single installation. The prior planning-only restriction below is
+superseded for that work. Keep a small native service in this workspace; no Qt/Python/GGUF/
+GPU/full-ASR dependency in idle wake. Install under a protected OS application directory,
+use a least-privileged service identity and a fixed user-context launch target, never arbitrary
+commands or LocalSystem execution of user-writable code. Setup may explicitly provision a
+pinned native offline keyword model/runtime; no runtime downloads/ONNX/cloud/recorded mic PCM.
+SCM installation needs actual Windows administrator consent. Shared Core clients remain safe.
+
 Desktop lifecycle correction (2026-10-19): user rejected embedding wake detection into Core/Qt
 and retaining the loaded assistant behind a tray icon. Remove that integration. Closing must
 terminate Qt and its Brain worker, releasing the language model, rather than hiding them.
 Keep only registered, leased native desktop-close control through the existing policy pipeline.
-There is currently NO installed/background wake listener or startup entry. The future wake
-component is PLANNING ONLY: a separate lightweight Rust executable, independent from Core,
-Qt/Python and large ASR/LLM weights. Do not implement/install it until the user continues that
-plan. Existing ONNX/cloud/audio-persistence restrictions remain. See WAKE_DAEMON_PLAN.md.
+At checkpoint b9ab758 this correction had no installed/background wake listener or startup
+entry. The user then authorized the Windows service above, in the same repository and installer,
+independent from Core, Qt/Python and large ASR/LLM weights. The old planning-only restriction
+is superseded. Existing ONNX/cloud/audio-persistence restrictions remain. See WAKE_DAEMON_PLAN.md.
 The generic parameterless-action omission review remains for conversational closing; it never
 executes or authorizes effects, and all actual calls retain independent assessment/native policy.
+
+Personal-organizer follow-up (2026-10-20): user explicitly requests copying yesterday's
+tasks to today and persistent daily recurrence. Add only typed registered native operations;
+Python must not calculate/persist occurrences or reopen SQLite. Daily date projections are
+read-only and use the OS calendar; explicit completion/edit writes one occurrence, never all
+future days. Persist rules/history and optimistic versions through a transactional schema
+migration. Whole-day copies preserve originals, validate any expected count atomically and
+deduplicate replays; never substitute moving tasks or inventing titles. No timed notifications,
+background scheduler, weekly/monthly recurrence or cloud service is authorized by this change.
+Tests must use invented records in memory or under target, never mutate personal task data.
+The registered recurrence-group tool may update only two to five distinct Core-bound tasks in
+one transaction, with all-member version checks/rollback. A partial page must not be treated as
+the complete set. Copy results must bind actual linked targets, never reuse source identities
+or completion states. Keep the model's one-call-per-decision and overall step limit intact.
+An overlong nonexecuting prose reply may be redrafted once through the existing structured
+answer-only response contract, within the same step budget. Enforce answer-only dispatch in
+the runtime as well as the provider. Never truncate/relax validation or retry an invalid tool
+dispatch, failed IPC, permission rejection or an already attempted effect for this correction.
+One provider-declared malformed next-step emission may request a fresh schema-guided decision
+only BEFORE any acting capability has been attempted in that turn. Consume the normal step
+budget; never edit malformed XML/arguments or replay an attempted tool. The decoder may use a
+compact action/envelope grammar to respect native grammar limits, but the full registered
+argument schema, confidence policy, current-request assessment and Rust policy remain mandatory.
+Provider inference failures and semantic validation failures are not retried through this path.
+Current-request permission follow-up: a proposal-blind interpretation of ONLY the current
+message may veto a mutation before the independent target/field assessment. It may expose
+bounded requested meaning, polarity and explicit target count, never tools/IDs/execution plans.
+It cannot grant authority, substitute another action or restore legacy routing. Preserve mixed
+positive requests/negative constraints; a pure prohibition ends without workarounds. Explicit
+counts must match whole-set expected_count. Keep the native validation/policy boundary intact.
 
 Personal-organizer authorization (2026-10-18): user requested persistent personal tasks/notes
 managed conversationally. Only the registered Rust organizer tools own their local SQLite

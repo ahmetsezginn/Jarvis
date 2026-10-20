@@ -10,17 +10,35 @@ jarvis -Desktop
 Qwen3.5-9B agent and session bindings. The fixed worker is a separate process so Qt remains
 responsive. No HTTP server, account or cloud speech service is required.
 
+The worker starts loading the checked local model immediately on opening. The microphone stays
+closed during preparation, in both automatic and manual modes. JARVIS announces activation and
+an estimated remaining time; the UI countdown uses a monotonic clock. The current host default
+is8 seconds, based on its measured7.9s 9B load, not an automatically learned history or exact
+progress. If exceeded, the UI says preparation continues; only the actual model_ready event
+ends activation. Once ready, stale preparation speech is cancelled, then JARVIS says
+"Sistem aktif. Merhaba, nasıl yardımcı olabilirim?". Capture starts after actual native output
+completion. Escape cancels automatic startup. Muted output still waits for model readiness.
+The former early-audio/deferred-ASR flow has been removed. Typed-only/opt-out clients retain
+their bounded worker input pipe. Closing ends the worker and releases the model; the small wake
+service never retains it. Ordinary speech recognition and response generation still take time.
+
 Ask JARVIS to close its own application or use the window X. Both end the desktop process;
 the fixed Brain worker exits and the large language model is released. Session-only conversation
 ends; saved personal tasks/notes remain in native storage. There is no tray-resident assistant
-or background wake listener. Reopen manually with `jarvis -Desktop` for now.
-A separate lightweight Rust wake executable is [planned](../../docs/brain/WAKE_DAEMON_PLAN.md),
-not yet implemented. Existing ordinary voice controls below are unchanged.
+or embedded wake listener. An independent native Windows service is now part of the same product
+and `install.cmd`; see [service setup and current acoustic limits](../wake/README.md).
+Manual desktop opening remains `jarvis -Desktop` and uses the installed service's single task.
+The desktop starts with Turkish recognition/voice and Auto conversation, including wake launches.
+After device discovery and model activation, it waits for the welcome output to finish before
+opening capture. Both wake and desktop follow the Windows default microphone. When that
+default changes, the interrupted turn is discarded and automatic capture rearms on the new
+default; it never joins speech from different microphones. Escape/End conversation stops listening.
+An explicit device selected manually remains fixed; device errors do not silently change it.
 
 Type and press Enter (Shift+Enter adds a line). Hold **Hold to talk** while speaking and release
 to transcribe/send. Recognition uses multilingual Whisper Turbo Q5 through native transcribe.cpp with bounded
 spelling context from installed application names. Recognized words are never replaced by
-application-name rules. **Listen** starts at Auto;
+application-name rules. **Listen** starts at Türkçe;
 choose Türkçe or English explicitly for short utterances when automatic language detection is
 unreliable. The actual input-device name, last detected language and signal level appear below
 the controls. Low level or clipping is shown there; these diagnostics are not a confidence score.
@@ -29,7 +47,7 @@ hitting the limit discards the unfinished turn instead of sending it. **Cancel r
 **Cancel transcription** discards that pending voice input. **Stop voice** stops output.
 **Speak replies** mutes/unmutes spoken answers. These controls do not undo an already executed task.
 
-Turn on **Auto conversation** to speak without holding a button. It defaults off. The waiting
+**Auto conversation** starts on, so you can speak without holding a button. The waiting
 orbit means the microphone is monitoring for speech; moving green bars mean speech was detected
 (their height follows the actual input level); the flowing violet/cyan animation means JARVIS is
 speaking. After about 900ms of silence, the completed utterance is transcribed and sent through
@@ -38,8 +56,7 @@ speech output completion, JARVIS automatically returns to waiting. With **Speak 
 it returns after the text reply. **End conversation** or Escape turns automatic listening off.
 The microphone is paused while JARVIS processes or speaks; hold-to-talk can interrupt its voice.
 A running decoder finishes in Rust, but cancelling transcription discards its late result and
-never dispatches it. Automatic mode is never enabled
-on startup and has no wake word.
+never dispatches it. The UI itself has no wake-word detector; the independent service opens it.
 Queued synthesis/device startup also keeps output busy; automatic listening waits for the
 whole native speech queue to complete. Test voice alone does not exercise normal agent replies;
 the live regression now includes the actual QML Send button and real agent worker.
@@ -114,11 +131,11 @@ Recordings and transcripts are not persisted by the voice layer. Native decoder 
 are disabled to prevent recognized words from leaking into Core logs; typed failures and Core
 audit events remain enabled. UI chat lives only in memory. Detailed file paths are displayed in
 result cards, outside model history; speech uses a short result summary instead of reading paths.
-Automatic background listening happens only while explicitly enabled in this window. A six-second
+Automatic listening follows the desktop startup preference and can be stopped in this window. A six-second
 client heartbeat lease closes abandoned capture and discards pending PCM, including completed
-turns. Fatal device errors stop automatic mode. A transient driver buffer notice no longer fails
+turns. Default-input changes discard/rearm; other fatal device errors stop automatic mode. A transient driver buffer notice no longer fails
 a whole healthy recording; sustained/internal audio loss is reported and never sent as a command.
-No wake word, automatic microphone startup, telemetry or microphone permission changes occur.
+No embedded wake detector, telemetry or microphone permission changes occur.
 
 The Qt client may read its fixed QML/font resources and spawn only the fixed Python session worker.
 It cannot execute model-provided commands or choose executable paths. The worker does not launch
@@ -136,6 +153,13 @@ python -m pytest scripts/tests/test_desktop_qt.py -o 'addopts=' -q
 # Requires an already running current Core; actual local Qwen, no test file/app launch:
 $env:JARVIS_RUN_DESKTOP_LIVE = '1'
 python -m pytest scripts/tests/test_desktop_qt.py -o 'addopts=' -q -s
+# Preload before any message and then answer using the ready model (pause wake service first):
+$env:JARVIS_RUN_DESKTOP_PRELOAD_LIVE = '1'
+python -m pytest scripts/tests/test_desktop_qt.py -k real_model_preloads -q -s
+# Estimated activation -> real model readiness -> completed welcome -> microphone:
+# No other desktop; pause wake service for this direct development test and restore afterward.
+$env:JARVIS_RUN_DESKTOP_STARTUP_LIVE = '1'
+python -m pytest scripts/tests/test_desktop_qt.py -k real_startup_worker -q -s
 # Actual microphone/recognition and local speaker; transcripts are never dispatched or printed:
 $env:JARVIS_RUN_VOICE_DEVICE_LIVE = '1'
 python -m pytest scripts/tests/test_voice_device_live.py -o 'addopts=' -q -s

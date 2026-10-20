@@ -1,6 +1,6 @@
 use crate::{
     core::{JarvisError, RiskLevel},
-    organizer::{AddItem, ListItems, Organizer, UpdateItem, local_clock},
+    organizer::{AddItem, CopyTasks, ListItems, Organizer, SetRecurrence, UpdateItem, local_clock},
     tools::{Tool, ToolContext, ToolOutput},
 };
 use serde::de::DeserializeOwned;
@@ -23,6 +23,8 @@ impl OrganizerTool {
             "organizer_list",
             "organizer_add",
             "organizer_update",
+            "organizer_copy_tasks",
+            "organizer_set_recurrence",
         ]
         .into_iter()
         .map(|operation| {
@@ -39,7 +41,14 @@ impl Tool for OrganizerTool {
         self.operation
     }
     fn risk_level(&self) -> RiskLevel {
-        if ["organizer_add", "organizer_update"].contains(&self.operation) {
+        if [
+            "organizer_add",
+            "organizer_update",
+            "organizer_copy_tasks",
+            "organizer_set_recurrence",
+        ]
+        .contains(&self.operation)
+        {
             RiskLevel::Low
         } else {
             RiskLevel::ReadOnly
@@ -50,6 +59,8 @@ impl Tool for OrganizerTool {
             "organizer_add" => parse::<AddItem>(args)?.validate(),
             "organizer_list" => parse::<ListItems>(args)?.validate(),
             "organizer_update" => parse::<UpdateItem>(args)?.validate(),
+            "organizer_copy_tasks" => parse::<CopyTasks>(args)?.validate(),
+            "organizer_set_recurrence" => parse::<SetRecurrence>(args)?.validate(),
             _ if args.as_object().is_some_and(|m| m.is_empty()) => Ok(()),
             _ => Err(JarvisError::InvalidArguments {
                 message: "clock expects empty arguments".into(),
@@ -62,6 +73,10 @@ impl Tool for OrganizerTool {
             "organizer_add" => json!({"saved": true, "item": self.store.add(&parse(args)?)?}),
             "organizer_list" => json!(self.store.list(&parse(args)?)?),
             "organizer_update" => json!({"saved": true, "item": self.store.update(&parse(args)?)?}),
+            "organizer_copy_tasks" => json!(self.store.copy_tasks(&parse(args)?)?),
+            "organizer_set_recurrence" => {
+                json!({"saved":true,"items":self.store.set_recurrence(&parse(args)?)?})
+            }
             _ => local_clock(),
         })
     }

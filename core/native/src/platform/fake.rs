@@ -12,6 +12,7 @@ pub struct PlatformCalls {
     pub opened_applications: Vec<String>,
     pub opened_folders: Vec<PathBuf>,
     pub opened_files: Vec<PathBuf>,
+    pub opened_steam_games: Vec<u32>,
     pub opened_files_with_apps: Vec<(PathBuf, String)>,
     pub system_status_count: usize,
 }
@@ -57,6 +58,17 @@ impl FakeDesktopPlatform {
 }
 
 impl DesktopPlatform for FakeDesktopPlatform {
+    fn open_game_shortcut(
+        &self,
+        target: &crate::files::GameShortcutTarget,
+    ) -> Result<(), JarvisError> {
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .opened_steam_games
+            .push(target.steam_app_id());
+        Ok(())
+    }
     fn open_file_with_app(
         &self,
         path: &Path,

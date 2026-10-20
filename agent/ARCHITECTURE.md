@@ -1,5 +1,21 @@
 # JARVIS Architecture
 
+## Catalog-backed Steam game shortcuts (2026-10-19)
+
+The existing open_file tool now supports a narrow native metadata adapter for .url Steam game
+shortcuts. The caller/model still supplies only a current catalog entry_id. After normal
+registry/validation/policy, FileCatalog revalidates scope, ancestry, stale metadata and reparse
+exclusions, reads at most16KiB under a stable Windows read handle and validates one
+InternetShortcut URL: exact steam://rungameid/<positive-u32>, without arguments/query/fragments.
+UTF-8/BOM and UTF-16LE BOM metadata are supported. Icons/other metadata are never executed or
+dereferenced. A native-only GameShortcutTarget reconstructs the URI; the Windows adapter invokes
+its registered Steam handler using fixed open and no extra parameters. The .url path is never
+passed to an OS launcher. No new model tool, protocol field, raw ID/URI authority or CS2-specific
+mapping is introduced. Ordinary documents/default associations and explicit PDF adapters remain.
+Other .url schemes/Steam commands, general .lnk and executable/script opening remain excluded.
+Success means Windows accepted activation, not that a game reached its main menu; runtime adds
+no post-launch verification. Development smoke separately observed the actual cs2 process.
+
 ## Desktop termination correction (2026-10-19)
 
 The user rejected the previous integrated-wake/tray-resident design. That runtime integration,
@@ -15,11 +31,39 @@ A parameterless acting capability can opt into a single semantic omission review
 answer. It may request registry-constrained replanning but grants no execution authority; normal
 current-request assessment/Core policy and the five-step budget remain mandatory.
 
-The future low-memory wake component is a separate Rust executable, not a Core module or a
-Qt/Python resident. Only the small detector runs while the assistant is closed; a fixed trusted
-native bootstrap starts the assistant on demand. No daemon, startup registration or detector
-has been implemented/installed in this correction. See
-[the proposed process/security/lifecycle plan](../docs/brain/WAKE_DAEMON_PLAN.md).
+Latest authorized follow-up: `services/wake` is a separate native crate in THIS workspace and
+product, installed by root `install.cmd`. Windows SCM runs it as LocalService from a protected
+Program Files directory, independently of Core/Qt/Python/large ASR/GGUF. Its fixed launch event
+uses a protected Windows Task Scheduler action running as the installed console owner with a
+limited InteractiveToken; no password, arbitrary command or user code executes as the service.
+Manual desktop launches use the same service/task. Capture is dropped before activation and
+remains off while the task runs. The native bootstrap owns a kill-on-close job for its new
+descendants; existing shared Core clients are preserved. Locked/unlogged/other-owner sessions
+do not capture. Only bounded in-memory PCM and non-content status metrics are retained.
+Real service microphone access and fixed activation/close/rearm have passed on this host;
+the first acoustic detector failed the user's voice. The replacement uses checksum-pinned
+openWakeWord TFLite graphs through the official LiteRT CPU C ABI, with no Python/ONNX/GPU.
+The user confirmed a real activation worked; name-only false wake and a Turkish synthetic miss
+remain open, so general acoustic acceptance is incomplete. The latest user correction removes
+the BSX pin: wake and desktop use Windows' current default input. The service checks endpoint
+identity once per second and drops old audio/features before reacquiring a changed default.
+Latest user preference: the desktop starts with Turkish recognition/voice and Auto conversation.
+It announces activation with an estimated countdown, keeps capture closed until model_ready,
+then speaks the welcome and waits for native output completion before capture. The estimate
+defaults to8s from this host's measured7.9s load, not actual progress or persistent history;
+expiry never activates the assistant. Core retains the endpoint privately; speech_poll reports a
+typed input_changed flag if it changes. Qt cancels/discards the old turn and rearms after native
+teardown. speech_finish independently rejects a changed route. Explicit manual device choices
+do not silently fall back. All speech still uses Core tools; endpoint identities never enter AI.
+The user-context desktop worker now preloads the provider immediately after connecting, while
+Qt announces preparation; it does not wait for the first user request. ready(model_loading=true)
+starts the countdown, model_ready follows successful checksum/runtime loading. Both automatic
+and manual capture are blocked until readiness; the former deferred-audio path is removed.
+Typed-only/opt-out clients retain bounded queued input. Device discovery and actual welcome
+completion independently gate capture; old speech acknowledgements cannot revive stale counts.
+Cancel/load failure/close discard pending capture and normal shutdown releases the model.
+The wake service never hosts this model; no background keep-alive/server was added.
+See [implementation, setup and acoustic acceptance](../docs/brain/WAKE_DAEMON_PLAN.md).
 
 ## Personal organizer revision (2026-10-18)
 
@@ -32,13 +76,38 @@ OrganizerTool -> Organizer` is the only storage path. Native Core owns a version
 SQLite database under the OS user data directory. SQL is fixed/parameterized; model text
 cannot select paths, SQL or record IDs. Typed arguments deny extra fields. Mutations use
 Core-returned IDs plus optimistic versions, and rejected policy calls never write.
-List/clock are ReadOnly; create/update are Low risk, current-request authorized and audited
+List/clock are ReadOnly; create/update/day-copy are Low risk, current-request authorized and audited
 without personal text. Archive is reversible; no permanent deletion is exposed.
 
-Date-only tasks use the OS local calendar (Chrono); today/tomorrow resolve inside Rust.
+Date-only tasks use the OS local calendar (Chrono); yesterday/today/tomorrow resolve inside Rust.
 Today is an exact date, overdue and undated are separate filters. Notes have no due date or
 completed state. Transactions survive restart; newer/corrupt schemas fail without resetting
 user data. Merely registering tools or listing an uninitialized organizer creates no database.
+Daily routines (2026-10-20) use schema v2 rules and per-date overrides. Listing projects the
+requested date without writing new rows; there is no scheduler or catch-up backlog. Completing
+one day leaves the next day open. Private bindings include the native occurrence date alongside
+ID/version; the model sees only the date and recurrence, not the binding field. Title/body/status
+updates affect one date. Stopping repetition ends the rule after the selected date. All-date
+lists include stored edited/completed occurrences and the relevant current/start/last date.
+Native organizer_copy_tasks copies a whole day's non-archived tasks in one transaction, including
+completed originals as new open tasks. Count mismatches/capacity errors roll back everything;
+source/date/target provenance deduplicates retries, and existing daily occurrences are not copied.
+The expected task count is required at both semantic and native boundaries; without an explicit
+user count, list the source date and use its native copyable_total (which excludes archives).
+Rules/history/copy provenance survive restart; schema v1 migrates transactionally without
+rewriting old records. Task rows plus occurrence overrides share the 10,000-record bound.
+Copies return up to five real linked target rows with private IDs/versions and current state,
+not source rows; Brain binds and renders these for follow-up references. A new registered
+organizer_set_recurrence transaction applies the same setting to two to five distinct verified
+tasks, with rollback on any stale/invalid member. Only complete selections expose this semantic
+capability; private bindings never enter model parameters. Five-step/single-call protocol remains.
+The current GGUF provider first obtains a proposal-blind meaning/polarity/explicit target count
+from the current message alone. This is a veto, not tool routing or authorization. A prohibition
+ends without retries/workarounds; a mismatched explicit whole-set count cannot reach Core.
+Positive requests still require independent effect/target/field assessment and native policy.
+No history/target metadata is supplied to the blind pass; no word replacement, language-specific
+sentence branch or legacy classifier fallback is added. This adds a local model call per effect
+assessment; it is not a guarantee that all language/identity ambiguities are solved.
 Production supplies a persistent Organizer to build_executor_with_organizer; library/test
 builders default to isolated in-memory stores. SQLite owns transactional disk writes and
 bounded busy waits; separate Core instances use version conflicts instead of lost updates.
@@ -55,6 +124,15 @@ file cards when another bundle owns the page. Existing SAPI's 1024-character spe
 still applies. Conversation history remains session-only; /reset does not erase saved items.
 No background scheduler, alarm, cloud sync, external-plugin downloader or OS-file mutation
 is added. Details and current test evidence: PERSONAL_ORGANIZER.md.
+An overlong prose draft may receive one bounded answer-only redraft; tools and prior effects
+cannot run during this presentation correction. Invalid tool arguments retain strict rejection.
+Malformed native model-call syntax may consume one normal decision step for a fresh structured
+plan before ANY acting-capability attempt. Original malformed text is never repaired/executed.
+The compact decoding grammar admits only registered action names and a JSON envelope; full
+arguments are still validated against the selected capability before confidence/authorization
+and Core policy. This avoids the installed llama.cpp grammar rule-complexity limit. No Core,
+IPC, provider-inference failure or attempted effect is retried; completed outcomes remain
+visible and private rendered data stays outside model history on error exits.
 
 ## Current desktop/voice revision (2026-10-16)
 

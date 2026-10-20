@@ -545,7 +545,9 @@ fn production_registry_contains_registered_application_and_file_tools() {
             "open_folder",
             "organizer_add",
             "organizer_clock",
+            "organizer_copy_tasks",
             "organizer_list",
+            "organizer_set_recurrence",
             "organizer_update",
             "refresh_app_catalog",
             "refresh_file_catalog",
@@ -566,7 +568,13 @@ fn production_registry_contains_registered_application_and_file_tools() {
             tool.risk_level,
             if tool.name.starts_with("open_")
                 || tool.name.starts_with("desktop_")
-                || matches!(tool.name, "organizer_add" | "organizer_update")
+                || matches!(
+                    tool.name,
+                    "organizer_add"
+                        | "organizer_copy_tasks"
+                        | "organizer_set_recurrence"
+                        | "organizer_update"
+                )
                 || (tool.name.starts_with("speech_") && tool.name != "speech_status")
             {
                 RiskLevel::Low

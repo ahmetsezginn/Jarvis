@@ -1,6 +1,229 @@
 # Handoff
 
-LATEST user correction (2026-10-19): user rejected the embedded Core/Qt wake and tray-resident
+LATEST publication checkpoint (2026-10-20): user authorized committing/pushing all accumulated
+wake/default-mic/preload/activation/Steam/task-routine changes and refreshing GitHub presentation.
+README now introduces the actual Rust/Python/Qt product and links to current setup/evidence;
+DEVELOPMENT_PROCESS explicitly labels older milestones historical. GitHub About/10 topics were
+updated and read back. Full workspace validation: Rust134 passed /7 opt-in ignored; Brain/Qt593
+passed /204 skipped; workspace all-target Clippy, fmt, Ruff133 files, seven PS syntax checks and
+diff passed. Full Rust run exposed one stale executor registry expectation; both new organizer
+tools and their low-risk classifications are now asserted. No production-code change in this
+publication pass. Existing actual9B12/12 evidence was not rerun for documentation/test-only edits.
+See docs/brain/PRE_PUSH_REVIEW_2026-10-20.md. These accumulated changes are included in this
+publication checkpoint; use git log/status and origin/main to verify its final hash/sync state.
+Older uncommitted/unpushed notes below describe their historical session boundaries.
+
+LATEST task routines (2026-10-20): copying a day's agenda,
+persistent daily rules/per-day completions, and atomic recurrence groups are implemented.
+Native tools now include organizer_copy_tasks and organizer_set_recurrence (30 total tools).
+Schema v2 transactionally migrates v1 without rewriting saved records. Reads project daily
+occurrences without writes/scheduling. Whole-day copies require expected_count, preserve
+originals, deduplicate replays and return actual linked target rows for private follow-up
+bindings. Two-to-five complete verified tasks may change recurrence in one transaction;
+partial pages, stale members, notes and duplicate IDs cannot produce partial group writes.
+Details/commands/failures: docs/brain/TASK_ROUTINES_2026-10-20.md.
+
+Real evaluation exposed proposal anchoring: prohibited TR copy and changing explicit three to
+one were wrongly approved. Current-message-only meaning can now VETO, never authorize/route;
+then independent effect assessment and Rust policy still apply. Categories distinguish
+perform/stop_existing/permission/forbid_new/discussion/unclear; a coarse earlier polarity schema
+incorrectly blocked stopping routines. Counts constrain whole-set parameters. A pure prohibition
+ends without workarounds. Current Qwen tool protocol remains one call per decision/five steps;
+the atomic recurrence capability replaces three separate same-setting calls. Overlong prose
+alone may redraft once under an answer-only contract; no effect/IPC/provider error is replayed.
+
+Rust84 passed /2 ignored, Clippy all-targets and fmt passed. Native CLI28 separate isolated
+LOCALAPPDATA processes passed, including copy/retry/count and atomic three-task repetition/stop.
+Final ordinary Brain/Qt593 passed /204 skipped, Ruff check/format and diff passed. A malformed native XML emission
+can make one fresh structured decision only before any acting attempt; full schema/permission
+validation remains. Compact decoding avoids the SDK grammar repetition limit; no raw XML repair,
+effect replay or inference-error retry. Error exits retain verified display/reference focus and
+keep rendered data out of model history. Targeted actual-model EN daily flow now passed after
+the malformed XML case. Final actual9B + actualRust matrix PASSED12/12 state/dispatch scenarios,
+including19 permission and9 meaning checks. Evidence target/organizer-routines-verified-model.log
+and target/task-routines-f1d6252f43eb4cfe85079a4d34934de1/results.json. Earlier failed matrices
+remain recorded. These are state/dispatch checks, not perfect wording acceptance: weekly
+alternatives, count-mismatch explanations and a false daily-rescheduling how-to claim remain
+documented response weaknesses. Native daily rescheduling remains correctly blocked.
+Interrupted CPU trial is NOT acceptance/performance evidence.
+Deployed validated final Core target/debug, current PID25636 at update, hashes matched; actual
+Named Pipe ping/discovery/clock verified30 tools without reading/modifying personal tasks.
+Qt/Brain were closed by the user for testing. Evaluation ended exit0; no evaluation/Qt/Brain
+model processes remain. Wake service restored Running, desktop_running=false; Core25636 still
+matches the validated binary hash. No personal records were read/mutated by live deployment
+verification. No new service/UAC/model artifact. Reopen JARVIS to load the new Brain source;
+old rejected/one-time requests do not magically become daily rules and must be requested again.
+This work is included in the publication checkpoint above. Older ambiguous-target/inferred-date stress
+failures remain open; this feature is not universal organizer acceptance.
+
+LATEST activation dialogue (2026-10-19): user explicitly replaced listening DURING model
+preload with: open window -> spoken estimated activation countdown, microphone CLOSED ->
+actual model_ready -> "Sistem aktif. Merhaba, nasıl yardımcı olabilirim?" -> real output
+completion -> automatic capture. main.py blocks manual AND automatic speech_start while
+loading/pending initialization. Removed the superseded early-audio/deferred-ASR state/path.
+Countdown uses a monotonic clock starting at worker ready(model_loading=true), default8s
+based on prior measured7.9s host load. It is labelled TAHMINI, not exact progress, persisted
+learning or a guaranteed duration. No settings file/registry/OS tool was added. Expiry shows
+"Hazırlık devam ediyor" and never asserts readiness; real readiness cancels stale preparation
+speech/acknowledgements and welcomes once. Both device discovery and welcome completion gate
+capture. Mute/cancel/model error/worker exit/close cannot reactivate via late callbacks.
+
+Final Brain/Qt568 passed /204 skipped; Ruff check/format and diff passed. New coverage includes
+early/overdue countdown, no capture before real readiness, stale speech acknowledgements,
+queued/actual welcome completion, QML countdown bindings, readiness before discovery, opt-out,
+model failure and worker exit with late discovery. Earlier early-audio tests were rewritten
+for the user's superseding no-audio-before-ready requirement, not hidden/xfail'ed.
+Real 9B + real QML/Core/Turkish Tolga activation test PASSED (16.54s): preparation announcement,
+actual model-ready signal, completed welcome and only then AMD default microphone opened;
+capture immediately cancelled without dispatch. Speaker was current Windows default BSX output.
+Actual SCM/task activation/close during initialization/rearm smoke PASSED; no Qt/Brain worker
+left behind, listener restored Running/listening, error=null. No Rust/Core/service binary or
+model/prompt changes in THIS activation task; Qt/worker repo source applies on next opening.
+Evidence target/desktop-activation-{tests,live,service-smoke}.log. Exact ordinary validation:
+python -m pytest -o addopts='' -p no:cacheprovider --basetemp <fresh-target-dir>
+services/brain/tests scripts/tests/test_desktop_qt.py -q (documented PYTHONPATH, offscreen Qt).
+Live: JARVIS_RUN_DESKTOP_STARTUP_LIVE=1, pytest scripts/tests/test_desktop_qt.py -k
+real_startup_worker -q -s; pause/resume original Running listener around direct development
+test, no other loaded desktop. All accumulated changes still uncommitted/unpushed.
+
+LATEST Steam shortcut correction (2026-10-19): user found/confirmed Desktop/games/Counter-Strike
+2.url but open_file returned policy_denied. Actual local target steam://rungameid/730; native
+document-only extension gate was the cause. Added generic files/shortcut metadata adapter and
+native typed GameShortcutTarget + Windows fixed Steam handler activation. Max16KiB, supported
+text BOM encodings, exactly one URL, positive-u32 rungameid only, no arguments/query/other
+commands, stable read handle plus original scope/stale/reparse checks. Never launch raw .url,
+IconFile, general .lnk or model URI/ID/path. Existing open_file schema/policy/Brain unchanged.
+62 library passed /2 ignored +16 file-catalog integration passed (78 total); Clippy all-targets,
+fmt, diagnostic Ruff/diff passed. Two generic-game successes, malicious/stale/injected cases,
+policy zero-dispatch and existing IPC contract covered. docs/brain/STEAM_SHORTCUTS.md has exact
+commands/evidence. Deployed tested Core under target/debug, restarted owned Core PID36900 at
+update; wake service's prior Running state preserved, no Qt was open. Real Core/IPC/policy smoke
+opened the user's exact shortcut; separately observed cs2 PID46088 starting, left game open.
+This is process-start evidence, not menu/login readiness; no runtime post-launch probe added.
+All current service/desktop/shortcut work remains uncommitted/unpushed; prior b9ab758 separate.
+
+LATEST desktop preload (2026-10-19): user selected starting model preparation on wake/open,
+rather than the first message. The existing user-context worker now emits ready(model_loading),
+loads the same checked provider on its own process thread, then emits model_ready/load_time_ms
+BEFORE reading queued requests. No additional inference thread/server, provider/prompt change,
+checksum bypass or idle model resident in the small wake service. Close still exits Brain.
+Qt greets/listens during preload and shows PREPARING ASSISTANT. Early typed input waits in the
+bounded pipe; completed automatic PCM stays bounded in Rust while speech_poll renews its lease.
+Only after model_ready does speech_finish allocate ASR, avoiding simultaneous initial GPU loads.
+Manual hold-to-talk is disabled until preload completes so button release never extends capture.
+Cancel/model failure/close drop pending audio. Default-input change clears the deferred binding;
+late readiness cannot submit a replacement unfinished recording. Actual effects retain policy.
+
+Final full Brain/Qt565 passed /204 skipped; Ruff check/format and diff passed. First broad run
+had 11 tmp_path SETUP errors in inaccessible external pytest temp folder, then all passed with
+a fresh target/desktop-preload-py-<UUID> basetemp; no tests weakened/skipped to fix it.
+Three real tests passed separately: preload without any message + first reply (1), actual
+Turkish greeting/default AMD capture while loading + early-message real reply (2). Actual fixed
+SCM/task activation/close during preload/rearm smoke also passed, no Qt/Brain worker left behind.
+Evidence target/desktop-preload-{tests-final,live,early-live,service-smoke}.log and
+desktop-preload-live.json. One local sample: model load7919ms, desktop-to-prepared8156ms,
+first reply after preparation9938ms, Qt event ticks262. This is NOT a cold-disk/A-B speedup
+benchmark or a guarantee of instant first response; normal inference/ASR and very short first
+utterances can still wait. Model loading has moved earlier, not been removed.
+Exact ordinary command (normal documented PYTHONPATH, QT_QPA_PLATFORM=offscreen):
+python -m pytest -o addopts='' -p no:cacheprovider --basetemp <fresh-target-dir>
+services/brain/tests scripts/tests/test_desktop_qt.py -q.
+Live: JARVIS_RUN_DESKTOP_PRELOAD_LIVE=1, pytest scripts/tests/test_desktop_qt.py -k
+real_model_preloads -q -s; pause/resume installed service around direct-development live tests.
+No Rust/service binary change or reinstallation in THIS preload change. Service verified listening
+on Windows default AMD afterward. All new work remains uncommitted/unpushed.
+
+LATEST microphone correction (2026-10-19): user removed BSX USB and requested Windows' selected
+default microphone for wake/Auto conversation. Added explicit install.cmd -DefaultWakeMicrophone
+to CLEAR the old protected pin (ordinary upgrades still preserve optional explicit selections).
+Wake compares private CPAL default endpoint identity once/second and discards old PCM/features
+before reopening. Core capture privately binds its default endpoint; speech_poll adds typed
+input_changed on a change/disconnection, cancels the old stream and discards partial audio.
+speech_finish independently rejects a changed route. Qt waits for speech_cancel acknowledgement
+before rearming default, and respects End conversation during that switch. Fixed manual inputs
+do not silently switch. No schema weakening, direct Python audio or recording persistence.
+
+49 related Qt/Brain tests passed /5 skipped; native wake5 passed; Core library60 passed /2 ignored;
+all-target Clippy for both crates, fmt, Ruff, PS AST and diff passed. Core was updated after
+verifying/stopping only this repository's old process; now PID50348 at update (verify later).
+Native build required existing desktop CMAKE/LIBCLANG_PATH/CXXFLAGS environment; Windows
+OneDrive output locks resolved by renaming individual verified target EXEs, no security changes.
+Evidence target/default-microphone-{rust,clippy,build,install}.log. Real read-only speech_status
+confirms USB absent, Windows default Microphone Array (AMD Audio Device), recording=false.
+First Windows UAC attempt was cancelled. User then explicitly confirmed "onayladım"; rerun
+install.cmd -SkipBuild -DefaultWakeMicrophone SUCCEEDED with actual Windows consent. Protected
+config microphone=null, installed EXE hash matches the tested release. Live service PID52916
+at installation was listening on Microphone Array (AMD Audio Device), input_peak >0, error=null.
+Fixed SCM/task activation, microphone handoff, policy close and rearm smoke PASSED again.
+Evidence target/default-microphone-install-final.log, default-microphone-service-final.json,
+default-microphone-service-smoke.log. Listener remains Running/listening on Windows default.
+Desktop entry point now always starts default input, independent of legacy wake config; removed
+the previous PS-to-Qt microphone-name environment transfer. Real Qt/QML + worker/Core/Tolga
+startup on Windows DEFAULT AMD input PASSED (48kHz stereo), capture immediately discarded with
+no dispatch; target/default-microphone-startup-live.log, 1 passed /39 deselected.
+No physical hotplug/default-switch test claimed. All new work remains uncommitted/unpushed;
+checkpoint b9ab758 publication remains separate.
+
+Latest desktop startup preference (2026-10-19): user requested Auto conversation with Turkish
+listening/voice and "Dinliyorum" on opening. main.py entry point now opts into this startup;
+device discovery resolves the exact installed wake microphone, greeting uses registered native
+speech_speak, and actual output completion gates automatic speech_start. Escape before discovery
+cancels startup, discovery/missing/duplicate-device/output failures never silently switch mics.
+jarvis.ps1 passes only the protected configuration's selected human microphone name and restores
+its environment afterward. No Rust service reinstall is needed; the bootstrap uses repo sources.
+Real Qt/QML + real worker/Core/Tolga TTS passed, then actual BSX 48kHz mono capture opened and was
+immediately discarded without dispatch. Log target/desktop-turkish-startup-live.log; command:
+JARVIS_RUN_DESKTOP_STARTUP_LIVE=1 plus JARVIS_DESKTOP_MICROPHONE, pytest scripts/tests/test_desktop_qt.py
+-k real_startup_worker -q -s (wake service paused/resumed around probe). New deterministic Qt
+coverage includes greeting/queued-output gating, Turkish transcription, selected-device UI,
+startup cancellation and errors. The older default-off descriptions below are historical.
+Final related tests: 45 passed /5 skipped (Qt plus Brain desktop session/capability); live
+startup test separately 1 passed. Ruff and PowerShell parse/diff checks passed. Installed fixed
+SCM/task activation/close/rearm smoke passed again with the new startup; evidence
+target/wake-service-turkish-startup-smoke.log. Listener is running again on BSX.
+This change is also uncommitted/unpushed.
+
+LATEST service implementation (2026-10-19): user authorized checkpoint push FIRST, then a
+real Windows SCM wake service as part of THIS product/repository/install. Checkpoint b9ab758
+was committed/pushed to origin/main and remote HEAD verified. Before that push Brain/Qt546
+passed/202 skipped; Rust110 passed/7 ignored; fmt/Clippy/Ruff/diff passed. The NEW service
+work described here is not yet committed/pushed; do not infer otherwise from the checkpoint.
+
+services/wake is an independent small Rust crate, no dependency on Core, Qt/Python, GGUF,
+full ASR, CUDA/GPU or ONNX. Root install.cmd installs the existing product command and the
+native SCM component together. Setup explicitly provisions SHA-pinned openWakeWord v0.5.1
+TFLite assets and official LiteRT2.3.0 CPU DLL; only native DLL extracted, no Python installed.
+Program Files protected runtime/config; ProgramData bounded non-content status; LocalService
+identity. Fixed protected \\JARVIS\\Launch task uses owner InteractiveToken/Limited, no password.
+Owner unlock/session check, mic release before launch, single task, pause/resume/stop, bounded
+in-memory PCM, recovery/cooldown. Parent kill-on-close job cleans its descendants; shared Core
+is preserved. Normal jarvis -Desktop uses the same task; stopped listener still allows manual
+desktop use. Config now explicitly selects user-confirmed Mikrofon (BSX USB Audio), no fallback
+if it disappears. Qt's ordinary Auto conversation remains opt-in; no UI/tray wake integration.
+
+Real user's OLD PocketSphinx wake failed. Replaced with official native neural detector and
+user confirmed "çalıştı" (worked) on a real wake. Status at that point recorded three accepted
+launch requests, not proof of three successful end-to-end opens. Synthetic comparison still
+FAILS: name-only triggers; Turkish TTS sample missed. EN normal/slow detected; four other
+negatives rejected. No threshold lowered to hide failures. A second phonetic-prefix experiment
+did not improve failures and was REMOVED. Tract graph-reader experiment was also rejected;
+no vendor override/graph modifications/tract dependency remains. Diagnostic artifacts under
+target/wake-provider, no production microphone audio saved. General acoustic acceptance is
+NOT complete; no long-room-noise/8-hour/latency or post-reboot acceptance claimed.
+
+Fresh native wake unit5 passed; Clippy all targets, fmt and PowerShell syntax passed. Installed
+BSX real-service smoke passes pause/resume, fixed activation through LocalService, one instance
+after repeated requests, mic handoff, actual Qt/native-policy close and rearm. Separate stopped-
+listener/manual-open + forced task-parent termination test PASSED: six owned descendants gone,
+pre-existing Core preserved. Evidence target/wake-service-final-smoke.log,
+wake-lifecycle-contract.{log,json}, wake-user-confirmed.json, wake-service-final-metrics.json.
+Final30.413s continuous BSX idle snapshot: private8.07MiB, working set19.16MiB, normalized
+CPU0.491% over16 logical processors. Short snapshot only, no long-run performance claim.
+Latest setup/limits and exact commands: services/wake/README.md and WAKE_DAEMON_PLAN.md.
+
+The historical correction/organizer failures below remain relevant; no organizer repair here.
+
+HISTORICAL checkpoint before the service (2026-10-19): user rejected the embedded Core/Qt wake and tray-resident
 implementation. They meant an independent lightweight Windows listener that launches a CLOSED
 assistant, so the 9B model is not retained. Removed native wake module, CPU wake ASR helpers,
 shared audio gate, Qt tray/resident, hidden-window interception and wake-specific generator/tests.

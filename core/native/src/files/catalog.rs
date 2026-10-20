@@ -420,10 +420,28 @@ impl FileCatalog {
         }
         if kind == FileKind::Directory {
             platform.open_folder(&entry.path)?;
+        } else if entry
+            .path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("url"))
+        {
+            let (handle, target) = super::shortcut::read(&entry.path)?;
+            let metadata = handle
+                .metadata()
+                .map_err(|_| invalid("shortcut is stale"))?;
+            if metadata.len() != entry.size_bytes
+                || metadata.modified().ok() != entry.modified
+                || metadata.created().ok() != entry.created
+            {
+                return Err(invalid("shortcut changed; refresh and search again"));
+            }
+            self.checked_entry(id)?;
+            platform.open_game_shortcut(&target)?;
+            drop(handle);
         } else {
             if !document_extension(&entry.path) {
                 return Err(denied(
-                    "only supported document/media types can be opened; programs, scripts and shortcuts are excluded",
+                    "only supported documents/media and validated Steam game shortcuts can be opened; programs, scripts and other shortcuts are excluded",
                 ));
             }
             platform.open_file(&entry.path)?;

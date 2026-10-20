@@ -317,7 +317,7 @@ def test_provider_repair_schema_contains_only_registered_presentation_actions(mo
     model = QwenGgufIntentModel()
 
     def generate(system, payload, schema, context):
-        captured.append(schema)
+        captured.append((schema, payload))
         return step("suggest_result", number=3)
 
     monkeypatch.setattr(model, "_agent_generate", generate)
@@ -330,10 +330,17 @@ def test_provider_repair_schema_contains_only_registered_presentation_actions(mo
         registry.schema(),
     )
     assert registry.parse(value).arguments == {"number": 3}
-    assert {c["properties"]["action"]["const"] for c in captured[0]["oneOf"]} == {
+    wire, payload = captured[0]
+    assert set(wire["properties"]["action"]["enum"]) == {
         "suggest_result",
         "show_results",
     }
+    assert {tool["name"] for tool in payload["available_functions"]} == {
+        "suggest_result",
+        "show_results",
+    }
+    for tool in payload["available_functions"]:
+        assert tool["parameters"] == registry.get(tool["name"]).parameters
 
 
 def test_retry_permission_is_rejected_for_core_backed_or_side_effecting_capabilities():

@@ -1,316 +1,148 @@
 # JARVIS
 
-Qt desktop and local voice are available with **`jarvis -Desktop`**. The terminal remains
-available through `jarvis`. Hold the microphone button and release to send, or enable **Auto
-conversation** for automatic speech detection with waiting/listening/speaking animations. Use
-result cards to open an item. Voice uses Handy's native transcribe.cpp engine inside Rust,
-Whisper Turbo Q5 on the dedicated GPU, local Silero GGML VAD and Windows SAPI.
-Closing JARVIS's window or dismissing it in chat now exits Qt and its Brain worker, releasing
-the language model. The previous integrated wake/tray resident was removed at the user's request.
-A [separate lightweight Windows wake process](docs/brain/WAKE_DAEMON_PLAN.md) is planned;
-it is not installed yet. Reopen manually with `jarvis -Desktop` for now.
-Discovery proposes one likely match first; reject it for another, or explicitly ask for all options.
-Automatic listening waits for queued speech to finish. Unknown-name discovery keeps a supplied
-folder and any mandatory saved-name constraint; it can suggest metadata alternatives within that folder.
-See [desktop setup and controls](services/desktop/README.md). No cloud speech service is required.
-Recognition uses native catalog spelling context; it does not replace transcript
-words with application-name rules. Actual input route/level is visible in the desktop. See
-[ASR comparisons and remaining errors](docs/brain/ASR_QUALITY.md).
-Current integration/setup: [native speech provider](docs/brain/NATIVE_SPEECH_PROVIDER.md).
+A local AI assistant for Windows, built with a Rust execution core, a Python reasoning
+service and a Qt desktop interface. Speak or type to find files, open applications and
+manage personal tasks and notes without a cloud inference API.
 
-Personal tasks and notes are available in the same conversation (typed or spoken):
-“Add booking the dentist for tomorrow”, “What do I need to do today?”, “Mark that task
-as done”, or “Save a note: the spare key is in the blue drawer”. Tasks can be rescheduled,
-reopened or archived, and notes can be recalled later. Data stays in the current user's
-local JARVIS SQLite database across restarts. Dates use the computer's local calendar;
-timed alarms, recurring tasks and notifications are not included. See
-[personal organizer](docs/brain/PERSONAL_ORGANIZER.md) for behavior and validation.
-The later [adversarial review](docs/brain/PERSONAL_ORGANIZER_STRESS_2026-10-18.md) found
-wrong-target and wrong-date updates; general task-assistant acceptance remains failed.
+JARVIS is a personal development prototype. It runs locally after explicit model/runtime
+provisioning; it is not yet a packaged, generally reliable desktop assistant.
 
-To start from any directory with `jarvis`, register the command once in your Windows user PATH:
+## What it can do
 
-```powershell
-./scripts/shell/install-jarvis-command.ps1
-```
+- Discover installed Windows applications, including packaged apps, and open catalog-backed matches.
+- Search file/folder metadata within configured roots, browse folders and open supported documents
+  with their Windows default application. Explicit PDF opening supports Chrome and Edge.
+- Propose one likely result at a time, retain bounded conversational references and offer
+  alternatives when a suggestion is rejected.
+- Open validated Steam game shortcuts through the registered Windows Steam handler.
+- Save personal tasks and notes outside the source checkout, recall daily agendas, complete or
+  reopen tasks, copy a previous day's tasks and persist daily recurrence with per-day completion.
+- Accept typed input, hold-to-talk or automatic conversation in the Qt interface, with local
+  speech recognition and Windows speech output.
+- Activate the desktop through an experimental independent **Hey Jarvis** Windows service.
+  Closing the desktop exits Qt and its Brain worker, releasing the language model while the
+  small native listener remains available.
 
-Open a new terminal and run `jarvis`. All launchers default to GGUF, overriding any inherited
-`JARVIS_MODEL_BACKEND` value for that session, and forward launcher arguments such as
-`jarvis -Model gguf` or `jarvis "Help me find my invoice"`. ONNX is disabled in the launcher
-and provider factory. The registration preserves existing
-PATH entries and changes only the user PATH; it does not change PowerShell execution policy.
-The repository must stay at its registered location; rerun registration if you move it.
+File discovery reads names and metadata, not document contents. It covers configured roots
+(Desktop, Documents and Downloads by default), with bounded scans and explicit partial results.
+Timed reminders, cloud sync, file deletion and downloaded executable skills are not implemented.
 
-Current architecture (2026-10-16): production uses a capability-driven agent loop. The model sees
-actual tool results and chooses its next step, rather than passing through the old intent/TurnPlan
-classifier chain. The local default is Qwen3.5-9B GGUF; ONNX is disabled. See [the current design,
-acceptance evidence and limits](docs/brain/AGENT_LOOP.md) and [setup](services/brain/README.md).
-Earlier examples/pass counts below describe their historical revisions, not general acceptance.
-The new model is already provisioned on this development host; restart `jarvis` to load source
-changes. `jarvis -Profile qwen3-4b` explicitly selects the old model for comparison.
+## How it works
 
-The current product language is **English**, as requested after the Turkish model evaluation.
-Prompts, active result/error messages and CLI startup use English; filenames in Turkish or any
-other language remain unchanged. Windows known-folder display labels are Desktop, Documents
-and Downloads regardless of the OS language. Custom root labels remain user-configured.
-Try “I saved my presentation somewhere and can't find it”, then “Open the second one, please”.
-Omitting an app uses the Windows default association. “Open it with Google Chrome” explicitly
-selects the existing local PDF adapter. English-primary behavioral acceptance is measured
-separately; this change does not establish that all model reasoning failures are solved.
-
-The following Turkish examples document earlier iterations; use English for the active profile.
-
-File/folder skills support scoped metadata search, folder listing and catalog-backed document
-opening through Rust Core. Run `./jarvis.ps1 -Model gguf` and try “Belgeler klasörünü aç”, “teklif
-PDF dosyasını bul”, “en büyük dosyaları göster” or “dosya kataloğunu yenile”. Default scope is
-Windows Desktop/Documents/Downloads. Optional `JARVIS_FILES_CONFIG` selects a local root TOML
-based on `config/files.example.toml` (Core restart required). Document-content reading and file
-moving/deletion are not implemented. See `docs/brain/FILE_SKILLS.md`.
-
-Interactive file follow-ups now keep a folder context for 120 seconds: after opening Downloads,
-“orada CV klasörünü bul” searches inside it; a following “orada CV dosyamı bul” uses a single found
-folder. Select displayed files with names such as “ahmet sezgin cv tr yi açar mısın”; separators and
-extensions need not be exact. Multiple matches ask for selection. Within displayed results,
-“TR olanı Chrome ile aç” opens a local PDF through Chrome's registered adapter; Microsoft Edge is
-also supported. “Google ile aç” clarifies local Chrome opening and accepts “evet”. Google Docs
-uploading and other application-specific file adapters remain unsupported. Exit and restart `jarvis`
-after source updates; an already loaded Brain session keeps its old code.
-
-Natural file references such as “TR olan benimkisi, onu açar mısın” also use model reasoning over
-the displayed names. Ordinary file opening uses Windows' default associated application; PDF does
-not require a browser. A named browser is an explicit alternative, not a condition for opening
-documents. See `docs/brain/FILE_REASONING.md` for validation.
-
-Numbered follow-ups such as “2. olanı açar mısın” address the current displayed page, not filenames
-containing “2”. Opening uses the default Windows application unless an explicit supported opener
-is requested. Invalid/expired list selections ask for clarification instead of starting a new search.
-See `docs/brain/FILE_SELECTION.md` for the selection contract and validation.
-
-JARVIS is a secure, modular, voice-first AI assistant for company-managed Windows computers. It provides a controlled layer between the user, AI models, and the operating system.
-
-The assistant is designed to understand requests such as:
-
-- “Open Google Chrome.”
-- “Show the current system status.”
-- “Open my Downloads folder.”
-- “Prepare my computer for the next meeting.”
-
-## Core Principle
-
-> The AI may request an action. The native core validates, authorizes, and executes it.
-
-JARVIS never gives an AI model unrestricted shell access. Every machine action is exposed as an explicit, typed tool and passes through validation, policy, and execution layers.
+The model chooses a next step from registered semantic capabilities, receives actual tool
+results and continues within a bounded agent loop. The current local default is
+**Qwen3.5-9B Q4_K_M GGUF**, running in-process. ONNX is disabled in production.
 
 ```text
-Voice / Text / UI
-       |
-       v
-AI Brain / Command Router
-       |
-       v
-Structured Tool Request
-       |
-       v
-Validation + Policy
-       |
-       v
-Native Tool Execution
-       |
-       v
-Windows / Applications
+Text / voice / Qt UI
+        |
+Python Brain: model + capability/result loop
+        |
+JarvisCoreClient -> Windows Named Pipe
+        |
+Rust registry -> validation -> policy -> executor
+        |
+Windows / applications / local organizer storage
 ```
 
-## Architecture
+**The AI may request an action. The native core validates, authorizes and executes it.**
+The model cannot supply executable paths, trusted application/file IDs or arbitrary shell
+commands. Python and Qt do not bypass native execution policy.
 
-JARVIS uses different languages for clearly separated responsibilities:
+- **Rust Core:** application/file catalogs, OS adapters, SQLite organizer, microphone/audio,
+  registered tools, validation, policy and audit.
+- **Python Brain:** local model integration, reasoning, capability selection and bounded
+  session context. Conversation is not persisted or used for training.
+- **Qt Quick / PySide6:** desktop presentation, input and result cards.
+- **Native wake service:** independent Windows SCM component using pinned openWakeWord TFLite
+  graphs through LiteRT on CPU; no Qt, Python, large language model or full speech recognizer
+  remains loaded in the idle listener.
 
-- **Rust native core:** trusted execution boundary, OS integration, tool registry, policy enforcement, application discovery, audit events, and IPC server.
-- **Python brain service:** natural-language interpretation, reasoning, planning, provider integrations, and structured tool selection.
-- **TypeScript desktop UI:** optional user interface layer; it does not own permissions or privileged execution.
+Speech recognition uses Handy's native transcribe.cpp engine inside Rust, a pinned Whisper
+large-v3-turbo Q5 model and Vulkan on the current host's dedicated GPU. Local Silero VAD and
+Windows SAPI handle turn detection and speech output. Production microphone recordings are
+not saved. Setup downloads are explicit; startup does not download models or use cloud speech.
 
-The Python service cannot launch applications or perform privileged OS operations directly. Machine actions are sent to the Rust core through the local control protocol.
+## Run locally
 
-More detail is available in [agent/ARCHITECTURE.md](agent/ARCHITECTURE.md).
-Engineering rules, tasks and session context are indexed in [agent/README.md](agent/README.md).
+The current development setup targets Windows 10/11, Python 3.12, Rust/MSVC and a dedicated
+GPU. The reference host has 8 GB VRAM; this is not a minimum-hardware or latency guarantee.
+Model weights, native runtime binaries, environments and personal data are excluded from Git.
 
-## Current Features
+Provision the Brain first using [Brain setup](services/brain/README.md#current-runtime-capability-agent-2026-10-16),
+then follow [desktop and native speech setup](services/desktop/README.md#explicit-setup).
+From a prepared checkout:
 
-- Dynamic discovery of Windows Start Menu shortcuts and packaged applications from Windows AppsFolder
-- Trusted in-memory application catalog
-- Explicit catalog refresh without restarting Core; after a missing app, “ben daha yeni yükledim” refreshes and retries that request
-- Deterministic application resolution
-- Policy-controlled application launching
-- Folder opening through a registered tool
-- System status reporting
-- Local Windows Named Pipe communication
-- Versioned, length-prefixed JSON protocol
-- Python client and command-line interface
-- Structured errors and audit-ready execution flow
+```powershell
+.\jarvis.ps1                # Terminal conversation
+.\jarvis.ps1 -Desktop       # Qt desktop
+```
 
-Registered native tools:
+To register the `jarvis` command and install the optional native wake service together:
 
-- `system_status`
-- `resolve_app`
-- `open_app`
-- `open_folder`
+```powershell
+.\install.cmd
+```
 
-## Repository Structure
+The service installation requests Windows administrator consent. `-SkipWakeService` registers
+only the command; `-RemoveWakeService` removes the service without deleting personal data.
+This installer assumes the development prerequisites are already provisioned; it is not an MSI
+or a complete dependency/model installer. See [wake service setup](services/wake/README.md).
+Keep the checkout at its registered location, or rerun installation after moving it.
+
+Open a new terminal to use `jarvis` or `jarvis -Desktop` from any directory.
+The desktop follows Windows' default microphone and starts with Turkish listening/voice and
+Auto conversation. While the model loads, the microphone stays closed and an estimated
+activation countdown is announced. Listening begins only after actual model readiness and
+the completed welcome. Escape or **End conversation** stops automatic listening.
+
+The agent's primary interaction profile is English; filenames retain their original Unicode.
+Turkish recognition/output is available, but this does not establish equivalent reasoning quality.
+Example requests:
+
+- “I saved a presentation somewhere and can't find it.”
+- “Open the second one, please.”
+- “What do I need to do today?”
+- “Copy yesterday's three tasks to today.”
+- “Make these three tasks repeat daily.”
+
+Personal organizer data lives in the Windows user data directory, outside this checkout.
+`/reset` clears conversational context and selections, not saved tasks or notes.
+See [organizer behavior and storage](docs/brain/PERSONAL_ORGANIZER.md).
+
+## Status and validation
+
+This is an actively tested prototype. Speech recognition, wake accuracy and ambiguous
+target/date interpretation still have documented failures. Passing bounded scenarios does
+not prove general assistant reliability. In particular, older organizer stress tests reproduced
+wrong-target and wrong-date updates; their overall acceptance remains failed.
+
+The 20 October 2026 task-routines validation passed 84 Rust tests, 593 Brain/Qt tests and
+12 real-model state/dispatch scenario groups. These are scoped results, not a universal quality
+claim. Exact commands, skipped opt-in tests, failed trials and remaining limitations are in
+[the task-routines report](docs/brain/TASK_ROUTINES_2026-10-20.md).
+
+- [Current state and handoff](agent/STATE.md)
+- [Architecture and execution boundary](agent/ARCHITECTURE.md)
+- [Agent loop and model provisioning](docs/brain/AGENT_LOOP.md)
+- [Speech integration and known errors](docs/brain/NATIVE_SPEECH_PROVIDER.md)
+- [Wake service validation and acoustic limits](docs/brain/WAKE_DAEMON_PLAN.md)
+- [Organizer adversarial review](docs/brain/PERSONAL_ORGANIZER_STRESS_2026-10-18.md)
+- [Engineering rules and task index](agent/README.md)
+
+## Repository layout
 
 ```text
-jarvis/
-├── core/
-│   └── native/              # Rust native core
-├── services/
-│   └── brain/               # Python brain service
-├── config/
-│   └── preferences.example.toml
-├── AGENTS.md                # Agent entry point
-├── agent/                   # Rules, architecture, tasks and session context
-├── Cargo.toml
-└── README.md
+core/native/        Rust Core and Windows adapters
+services/brain/     Python reasoning service and capability bundles
+services/desktop/   Qt Quick/QML desktop
+services/wake/      Independent native Windows wake service
+scripts/            Explicit provisioning, installation and evaluation tools
+config/             Example configuration; local overrides are ignored
+agent/              Engineering rules, architecture, task specifications and state
+docs/brain/         Detailed design, validation evidence and known failures
 ```
 
-## Requirements
-
-- Windows 10 or later
-- Rust toolchain with Cargo
-- Python 3.12 or later
-
-## Setup
-
-### Native core
-
-Prepare the pinned Windows speech runtime, then build from the repository root. MSVC C++
-tools and the desktop CMake/libclang build packages are required; see
-[desktop setup](services/desktop/README.md#explicit-setup).
-
-```powershell
-./scripts/models/provision_transcribe.ps1
-./scripts/shell/build-voice.ps1
-```
-
-Start the local core service:
-
-```powershell
-cargo run --manifest-path .\core\native\Cargo.toml -- serve
-```
-
-The server listens on a local, current-user Windows Named Pipe. It does not expose a TCP port.
-
-### Python brain service
-
-Create an isolated environment and install the service:
-
-```powershell
-py -3.12 -m venv .\services\brain\.venv
-.\services\brain\.venv\Scripts\python.exe -m pip install -e ".\services\brain[dev]"
-```
-
-With the native core running, use another terminal to verify the connection:
-
-```powershell
-cd .\services\brain
-.\.venv\Scripts\python.exe -m jarvis_brain.cli ping
-.\.venv\Scripts\python.exe -m jarvis_brain.cli tools
-.\.venv\Scripts\python.exe -m jarvis_brain.cli status
-.\.venv\Scripts\python.exe -m jarvis_brain.cli open-app "Google Chrome"
-```
-
-The `open-app` command first resolves the requested name to a trusted catalog ID, then asks the native core to launch that ID. Caller-provided executable paths are not accepted.
-
-For local model provisioning and the interactive `./jarvis.ps1` launcher, see the
-[Brain setup guide](services/brain/README.md).
-Use `.\jarvis.ps1 -Model gguf` to explicitly select the provisioned 4B model; terminal Fast Router
-is temporarily disabled by default for diagnosis.
-With the PowerShell profile integration installed, simply run `jarvis` from any directory.
-
-## Native CLI Examples
-
-```powershell
-cargo run -p jarvis-core -- tools list
-cargo run -p jarvis-core -- apps refresh
-cargo run -p jarvis-core -- apps search blender
-cargo run -p jarvis-core -- tool resolve_app '{"query":"blender"}'
-cargo run -p jarvis-core -- tool system_status '{}'
-cargo run -p jarvis-core -- tool open_folder '{"path":"C:\\Users\\User\\Downloads"}'
-```
-
-## Local Preferences
-
-Copy the example file to create machine-specific preferences:
-
-```powershell
-Copy-Item .\config\preferences.example.toml .\config\preferences.toml
-```
-
-`config/preferences.toml` is ignored by Git. It may contain aliases, exclusions, and local preferences, but it is not the source of installed-application truth. You can also select another file with the `JARVIS_PREFERENCES_CONFIG` environment variable.
-
-## Security Model
-
-- The Rust core is the trusted execution boundary.
-- Every OS action is implemented as a registered tool.
-- Tool arguments are validated before execution.
-- Every actionable request passes through the policy engine.
-- Sensitive actions can require confirmation or be denied.
-- Windows-specific behavior remains behind platform adapters.
-- The AI service never executes arbitrary model-generated shell commands.
-- The control pipe rejects remote clients and is restricted to authorized local identities.
-- Secrets and unnecessary sensitive data must not be written to logs.
-
-## Control Protocol
-
-Rust and Python communicate through a local Windows Named Pipe:
-
-```text
-\\.\pipe\jarvis-core-<current-user-SID>-v1
-```
-
-Messages use UTF-8 JSON with a 4-byte big-endian length prefix. Every envelope declares protocol version `1`, and the maximum payload size is 1 MiB. A handshake is required before normal requests.
-
-Supported requests are:
-
-- `hello`
-- `ping`
-- `list_tools`
-- `execute_tool`
-
-This channel carries control messages only; it is not intended for raw audio streaming.
-
-## Validation
-
-Run the Rust checks from the repository root:
-
-```powershell
-cargo fmt --check --manifest-path .\core\native\Cargo.toml
-cargo build --manifest-path .\core\native\Cargo.toml
-cargo clippy --manifest-path .\core\native\Cargo.toml --all-targets --all-features -- -D warnings
-cargo test --manifest-path .\core\native\Cargo.toml
-```
-
-Run the Python checks from `services\brain`:
-
-```powershell
-.\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m ruff format --check .
-.\.venv\Scripts\python.exe -m pytest
-```
-
-## Status
-
-JARVIS provides a local capability agent, Qt desktop, native speech input/output, installed-app
-discovery and scoped file/folder search, listing and opening through the Rust policy boundary.
-Files are searched by metadata in configured roots; document contents are not read. Semantic
-file-request and ASR acceptance still have documented failures; this is a development version.
-
-Interactive JARVIS responses now appear as readable messages. Add `--json` to the Brain
-`ask` or `repl` command for structured diagnostics; see [Brain CLI](services/brain/README.md).
-
-GGUF interactive sessions now separate ordinary conversation from controlled machine tasks.
-Conversation replies do not dispatch tools; machine tasks retain Rust validation and policy.
-See [conversation/task routing](docs/brain/REQUEST_ROUTING.md) for details.
-
-GGUF sessions also retain a bounded file-search goal: location, type, rejected results and a
-pending clarification. A reply can refine that goal; chat and explanations do not repeat machine
-operations. See [dialogue acceptance and limits](docs/brain/ASSISTANT_DIALOGUE.md).
-After updating this version, rebuild and restart Native Core as well as the Brain: scoped search
-now includes typed category/depth/rejection filters. Existing sessions retain their loaded code.
+Model/runtime and third-party licenses remain applicable. In particular, the pretrained wake
+models use CC BY-NC-SA 4.0; see [wake third-party notices](services/wake/resources/THIRD_PARTY.md)
+before redistribution or commercial use.

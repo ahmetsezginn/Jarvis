@@ -18,6 +18,24 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = $PSScriptRoot
+# Both manual desktop activation and the wake service use the same single-instance
+# user task. Its native child sets the marker only while invoking this fixed script.
+$wakeInstall = Join-Path $env:ProgramFiles 'JARVIS\Wake'
+$wakeLauncher = Join-Path $wakeInstall 'jarvis-wake-service.exe'
+$wakeConfig = Join-Path $wakeInstall 'config.json'
+$wakeService = Get-Service -Name 'JarvisWake' -ErrorAction SilentlyContinue
+if ($Desktop -and -not $Text -and $env:JARVIS_WAKE_LAUNCH -ne '1' -and
+    $wakeService -and
+    (Test-Path -LiteralPath $wakeLauncher -PathType Leaf) -and
+    (Test-Path -LiteralPath $wakeConfig -PathType Leaf)) {
+    $installedWake = Get-Content -LiteralPath $wakeConfig -Raw | ConvertFrom-Json
+    if ($installedWake.repository -eq $repositoryRoot) {
+        if ($Profile -ne 'qwen35-9b' -or $FastRouter) { throw 'The installed desktop task uses the default GGUF profile without Fast Router.' }
+        $activation = Start-Process -FilePath $wakeLauncher -ArgumentList 'open' -WindowStyle Hidden -PassThru -Wait
+        if ($activation.ExitCode -ne 0) { throw 'JARVIS desktop activation failed. Check the installed wake service and Windows task.' }
+        return
+    }
+}
 $coreExecutable = Join-Path $repositoryRoot 'target\debug\jarvis-core.exe'
 $brainPython = Join-Path $repositoryRoot 'services\brain\.venv\Scripts\python.exe'
 $previousBackend = $env:JARVIS_MODEL_BACKEND

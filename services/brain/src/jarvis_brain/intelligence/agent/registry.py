@@ -13,6 +13,10 @@ from jarvis_brain.intelligence.contract import validate_intent_object
 from jarvis_brain.intelligence.parser import parse_json_object
 
 
+class ReplyTooLong(ModelOutputInvalid):
+    """A nonexecuting prose draft needs a bounded presentation repair."""
+
+
 @dataclass(frozen=True)
 class Observation:
     """Model-safe feedback and separately rendered, user-visible output."""
@@ -271,6 +275,14 @@ class CapabilityRegistry:
             if action == "answer"
             else self.get(action).parameters
         )
+        if (
+            action == "answer"
+            and isinstance(value["arguments"], dict)
+            and set(value["arguments"]) == {"message"}
+            and isinstance(value["arguments"]["message"], str)
+            and len(value["arguments"]["message"]) > 1024
+        ):
+            raise ReplyTooLong("reply exceeds 1024 characters")
         _validate(value["arguments"], schema)
         arguments = copy.deepcopy(value["arguments"])
         for name, field in schema["properties"].items():

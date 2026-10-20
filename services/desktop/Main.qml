@@ -159,12 +159,16 @@ ApplicationWindow {
                     ColumnLayout {
                         spacing: 5
                         Label {
-                            text: jarvis.voicePhase === "waiting" ? "I'm here. Start speaking."
+                            objectName: "startupStatus"
+                            text: jarvis.modelLoading ? jarvis.startupNote
+                                : jarvis.voicePhase === "waiting" ? "I'm here. Start speaking."
                                 : jarvis.voicePhase === "listening" ? "I'm listening\u2026"
                                 : jarvis.voicePhase === "speaking" ? "JARVIS is speaking"
                                 : jarvis.voicePhase === "processing" ? "Working on your request\u2026"
                                 : jarvis.voicePhase === "opening" ? "Preparing your microphone\u2026" : "Let's talk"
                             color: "#e2eaf8"; font.pixelSize: 16
+                            Layout.maximumWidth: window.width - 410
+                            wrapMode: Text.Wrap
                         }
                         Label {
                             text: jarvis.automatic ? "Auto conversation is on \u00b7 Pause to send \u00b7 Esc to stop"
@@ -203,7 +207,7 @@ ApplicationWindow {
                     objectName: "holdToTalk"
                     Layout.preferredWidth: 108; Layout.preferredHeight: 62
                     text: jarvis.recording ? "Release\nto send" : "Hold\nto talk"
-                    enabled: !jarvis.automatic && (!jarvis.busy || jarvis.recording)
+                    enabled: !jarvis.automatic && !jarvis.modelLoading && (!jarvis.busy || jarvis.recording)
                     onPressed: jarvis.startVoice(window.deviceOptions[devicePicker.currentIndex].index)
                     onReleased: jarvis.finishVoice()
                     onCanceled: { if (jarvis.recording) jarvis.cancelVoice() }
@@ -218,7 +222,12 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.fillWidth: true; spacing: 14
-                ComboBox { id: devicePicker; Layout.preferredWidth: Math.max(160, Math.min(290, window.width - 830)); model: window.deviceOptions; textRole: "name"; enabled: !jarvis.busy }
+                ComboBox {
+                    id: devicePicker; objectName: "inputDevice"
+                    Layout.preferredWidth: Math.max(160, Math.min(290, window.width - 830))
+                    model: window.deviceOptions; textRole: "name"; enabled: !jarvis.busy
+                    currentIndex: Math.max(0, window.deviceOptions.findIndex(function(device) { return device.index === jarvis.inputDevice }))
+                }
                 Label { text: "Listen"; color: "#8e9db4" }
                 ComboBox {
                     objectName: "recognitionLanguage"
@@ -231,7 +240,7 @@ ApplicationWindow {
                 Switch { text: "Speak replies"; checked: true; onToggled: jarvis.setVoiceEnabled(checked) }
                 Button { text: jarvis.automatic ? "End conversation" : jarvis.recording ? "Cancel recording" : jarvis.status === "Transcribing" ? "Cancel transcription" : "Stop voice"; onClicked: { if (jarvis.automatic) jarvis.setAutomatic(false, -1); else if (jarvis.recording || jarvis.status === "Transcribing") jarvis.cancelVoice(); else jarvis.stopSpeaking() } }
                 Item { Layout.fillWidth: true }
-                Label { text: "LOCAL  ·  PRIVATE"; color: "#667c96"; font.pixelSize: 10; font.letterSpacing: 1.4 }
+                Label { text: jarvis.modelLoading ? "PREPARING ASSISTANT" : "LOCAL  ·  PRIVATE"; color: "#667c96"; font.pixelSize: 10; font.letterSpacing: 1.4 }
             }
             RowLayout {
                 Layout.fillWidth: true; spacing: 10

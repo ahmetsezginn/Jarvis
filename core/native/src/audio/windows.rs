@@ -24,6 +24,7 @@ struct Capture {
     result: Receiver<Result<(), JarvisError>>,
     samples: Arc<Mutex<Vec<f32>>>,
     input: InputRoute,
+    default_input_id: Option<cpal::DeviceId>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -38,6 +39,8 @@ struct Progress {
     xruns: u32,
     heartbeat: Instant,
     error: Option<String>,
+    input_changed: bool,
+    route_checked: Instant,
 }
 
 enum SpeechCommand {
@@ -180,6 +183,8 @@ impl AudioService for WindowsAudio {
             xruns: 0,
             heartbeat: Instant::now(),
             error: None,
+            input_changed: false,
+            route_checked: Instant::now(),
         }));
         let done = Arc::new(AtomicBool::new(false));
         let thread_progress = progress.clone();
@@ -204,7 +209,11 @@ impl AudioService for WindowsAudio {
                     Ok(())
                 });
                 if let Ok(mut state) = thread_progress.lock() {
-                    state.phase = if result.is_ok() { "complete" } else { "error" };
+                    state.phase = if result.is_ok() && !state.input_changed {
+                        "complete"
+                    } else {
+                        "error"
+                    };
                     state.level = 0.;
                     state.error = result.as_ref().err().map(ToString::to_string);
                 }
@@ -239,7 +248,7 @@ impl AudioService for WindowsAudio {
                 }
             })
             .map_err(failure)?;
-        let input = ready_rx
+        let (input, default_input_id) = ready_rx
             .recv_timeout(Duration::from_secs(10))
             .map_err(failure)??;
         let id = uuid::Uuid::new_v4().to_string();
@@ -251,6 +260,7 @@ impl AudioService for WindowsAudio {
             result: result_rx,
             samples,
             input: input.clone(),
+            default_input_id,
         });
         Ok(json!({"recording_id":id, "max_seconds":30, "input":input}))
     }
@@ -269,6 +279,17 @@ impl AudioService for WindowsAudio {
                 .filter(|c| c.id == id)
                 .ok_or_else(|| failure("Recording expired or belongs to another session"))?;
             let mut state = capture.progress.lock().map_err(failure)?;
+            if state.phase == "error" || state.route_checked.elapsed() >= Duration::from_secs(1) {
+                state.route_checked = Instant::now();
+                if default_input_changed(capture.default_input_id.as_ref()) {
+                    state.input_changed = true;
+                    state.phase = "error";
+                    state.error =
+                        Some("Windows default microphone changed; recording discarded".into());
+                    let _ = capture.stop.send(());
+                    *capture.samples.lock().map_err(failure)? = Vec::new();
+                }
+            }
             if state.heartbeat.elapsed() <= Duration::from_secs(6) {
                 state.heartbeat = Instant::now();
             } else {
@@ -280,6 +301,7 @@ impl AudioService for WindowsAudio {
             output["level"] = json!(state.level);
             output["xruns"] = json!(state.xruns);
             output["error"] = json!(state.error);
+            output["input_changed"] = json!(state.input_changed);
         }
         Ok(output)
     }
@@ -293,7 +315,11 @@ impl AudioService for WindowsAudio {
             .map_err(failure)??;
         {
             let state = capture.progress.lock().map_err(failure)?;
-            if state.heartbeat.elapsed() > Duration::from_secs(6) || state.phase == "error" {
+            if state.heartbeat.elapsed() > Duration::from_secs(6)
+                || state.phase == "error"
+                || state.input_changed
+                || default_input_changed(capture.default_input_id.as_ref())
+            {
                 return Err(failure("Recording expired; nothing sent"));
             }
         }
@@ -354,6 +380,14 @@ impl AudioService for WindowsAudio {
     }
 }
 
+fn default_input_changed(opened: Option<&cpal::DeviceId>) -> bool {
+    let Some(opened) = opened else { return false };
+    let current = cpal::default_host()
+        .default_input_device()
+        .and_then(|device| device.id().ok());
+    current.as_ref() != Some(opened)
+}
+
 // Stream notifications are typed: isolated xruns do not terminate a healthy stream.
 // Sustained loss rejects the utterance instead of sending potentially clipped commands.
 fn recoverable(kind: cpal::ErrorKind) -> bool {
@@ -374,15 +408,15 @@ fn check_health(xruns: u32, dropped: bool) -> Result<(), JarvisError> {
 }
 
 fn capture(
-    device: Option<usize>,
+    selected_device: Option<usize>,
     automatic: bool,
     stop: &Receiver<()>,
-    ready: mpsc::SyncSender<Result<InputRoute, JarvisError>>,
+    ready: mpsc::SyncSender<Result<(InputRoute, Option<cpal::DeviceId>), JarvisError>>,
     progress: Arc<Mutex<Progress>>,
 ) -> Result<Vec<f32>, JarvisError> {
     let start = || -> Result<_, JarvisError> {
         let host = cpal::default_host();
-        let device = match device {
+        let device = match selected_device {
             Some(index) => host.input_devices().map_err(failure)?.nth(index),
             None => host.default_input_device(),
         }
@@ -394,6 +428,11 @@ fn capture(
             name: device.description().map_err(failure)?.name().to_owned(),
             sample_rate: rate,
             channels,
+        };
+        let default_input_id = if selected_device.is_none() {
+            Some(device.id().map_err(failure)?)
+        } else {
+            None
         };
         if !(8000..=192000).contains(&rate) || channels == 0 || channels > 8 {
             return Err(failure("Unsupported microphone format"));
@@ -453,11 +492,12 @@ fn capture(
             rate,
             detector,
             input_route,
+            default_input_id,
         ))
     };
     let (stream, rx, errors, xruns, dropped, rate, mut detector) = match start() {
-        Ok((stream, rx, errors, xruns, dropped, rate, detector, input)) => {
-            let _ = ready.send(Ok(input));
+        Ok((stream, rx, errors, xruns, dropped, rate, detector, input, default_input_id)) => {
+            let _ = ready.send(Ok((input, default_input_id)));
             (stream, rx, errors, xruns, dropped, rate, detector)
         }
         Err(error) => {

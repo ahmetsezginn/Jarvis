@@ -126,7 +126,7 @@ class BuiltinCapabilities:
                             description="Filesystem kind only: file, directory or any. "
                             "Use category for document/media types, never put them in kind.",
                         ),
-                        extension=text_schema(16, pattern=r"[a-zA-Z0-9]{0,16}"),
+                        extension=text_schema(16, pattern=r"^[a-zA-Z0-9]{0,16}$"),
                         category=text_schema(
                             enum=[
                                 "any",

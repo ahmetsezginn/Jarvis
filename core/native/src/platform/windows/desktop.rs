@@ -24,6 +24,12 @@ impl WindowsDesktopPlatform {
 }
 
 impl DesktopPlatform for WindowsDesktopPlatform {
+    fn open_game_shortcut(
+        &self,
+        target: &crate::files::GameShortcutTarget,
+    ) -> Result<(), JarvisError> {
+        super::game_shortcut::open(target)
+    }
     fn open_file_with_app(
         &self,
         path: &Path,
