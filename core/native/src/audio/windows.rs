@@ -25,6 +25,7 @@ struct Capture {
     samples: Arc<Mutex<Vec<f32>>>,
     input: InputRoute,
     default_input_id: Option<cpal::DeviceId>,
+    echo_output: Option<Option<usize>>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -41,9 +42,11 @@ struct Progress {
     error: Option<String>,
     input_changed: bool,
     route_checked: Instant,
+    interrupted: bool,
 }
 
 enum SpeechCommand {
+    Endpoint(Option<usize>, Sender<Result<String, JarvisError>>),
     Status(Sender<Result<Value, JarvisError>>),
     Inventory(Sender<Result<Value, JarvisError>>),
     Speak(
@@ -86,6 +89,9 @@ impl WindowsAudio {
                         let _ = ready_tx.send(Ok(()));
                         while let Ok(command) = rx.recv() {
                             match command {
+                                SpeechCommand::Endpoint(output, reply) => {
+                                    let _ = reply.send(voice.echo_endpoint(output));
+                                }
                                 SpeechCommand::Status(reply) => {
                                     let _ = reply.send(voice.output_status());
                                 }
@@ -124,45 +130,13 @@ impl WindowsAudio {
     }
 }
 
-impl AudioService for WindowsAudio {
-    fn status(&self) -> Result<Value, JarvisError> {
-        let profile = super::transcribe::profile()?;
-        let host = cpal::default_host();
-        let default_input = host
-            .default_input_device()
-            .and_then(|d| d.description().ok())
-            .map(|d| d.name().to_owned());
-        let devices: Vec<_> = host.input_devices().map_err(failure)?.take(32).enumerate().map(|(i,d)|
-            json!({"index":i, "name":d.description().map(|x| x.name().to_owned()).unwrap_or_else(|_| "Microphone".into())})).collect();
-        let recording = self
-            .capture
-            .lock()
-            .map_err(failure)?
-            .as_ref()
-            .is_some_and(|c| !c.done.load(Ordering::Acquire));
-        let mut status = json!({"devices":devices, "default_input":default_input, "recording":recording,
-            "model_available":profile.path().is_file(),
-            "recognizer":super::transcribe::recognizer_label()?, "speaker":"Windows local voice", "max_seconds":30});
-        let inventory = (|| -> Result<Value, JarvisError> {
-            let (tx, rx) = mpsc::channel();
-            self.speaker()?
-                .send(SpeechCommand::Inventory(tx))
-                .map_err(failure)?;
-            rx.recv_timeout(Duration::from_secs(10)).map_err(failure)?
-        })();
-        match inventory {
-            Ok(data) => status
-                .as_object_mut()
-                .unwrap()
-                .extend(data.as_object().unwrap().clone()),
-            Err(error) => {
-                status["output_error"] = json!(error.to_string());
-            }
-        }
-        Ok(status)
-    }
-
-    fn start(&self, device: Option<usize>, automatic: bool) -> Result<Value, JarvisError> {
+impl WindowsAudio {
+    fn begin(
+        &self,
+        device: Option<usize>,
+        automatic: bool,
+        echo_output: Option<Option<usize>>,
+    ) -> Result<Value, JarvisError> {
         if !super::transcribe::profile()?.path().is_file() {
             return Err(failure("Provision the local Whisper model first"));
         }
@@ -176,7 +150,18 @@ impl AudioService for WindowsAudio {
         if let Some(old) = slot.take() {
             let _ = old.stop.send(());
         }
-        self.stop()?; // Half duplex: never capture the assistant's own speech.
+        let echo = if let Some(output) = echo_output {
+            let speaker = self.speaker()?;
+            let (tx, rx) = mpsc::channel();
+            speaker
+                .send(SpeechCommand::Endpoint(output, tx))
+                .map_err(failure)?;
+            let endpoint = rx.recv_timeout(Duration::from_secs(3)).map_err(failure)??;
+            Some((endpoint, speaker))
+        } else {
+            self.stop()?; // Manual/ordinary capture retains its half-duplex contract.
+            None
+        };
         let progress = Arc::new(Mutex::new(Progress {
             phase: if automatic { "waiting" } else { "listening" },
             level: 0.,
@@ -185,6 +170,7 @@ impl AudioService for WindowsAudio {
             error: None,
             input_changed: false,
             route_checked: Instant::now(),
+            interrupted: false,
         }));
         let done = Arc::new(AtomicBool::new(false));
         let thread_progress = progress.clone();
@@ -203,6 +189,7 @@ impl AudioService for WindowsAudio {
                     &stop_rx,
                     ready_tx,
                     thread_progress.clone(),
+                    echo,
                 );
                 let result = result.and_then(|pcm| {
                     *thread_samples.lock().map_err(failure)? = pcm;
@@ -261,8 +248,62 @@ impl AudioService for WindowsAudio {
             samples,
             input: input.clone(),
             default_input_id,
+            echo_output,
         });
-        Ok(json!({"recording_id":id, "max_seconds":30, "input":input}))
+        Ok(
+            json!({"recording_id":id, "max_seconds":30, "input":input, "echo_cancelled":echo_output.is_some()}),
+        )
+    }
+}
+
+impl AudioService for WindowsAudio {
+    fn status(&self) -> Result<Value, JarvisError> {
+        let profile = super::transcribe::profile()?;
+        let host = cpal::default_host();
+        let default_input = host
+            .default_input_device()
+            .and_then(|d| d.description().ok())
+            .map(|d| d.name().to_owned());
+        let devices: Vec<_> = host.input_devices().map_err(failure)?.take(32).enumerate().map(|(i,d)|
+            json!({"index":i, "name":d.description().map(|x| x.name().to_owned()).unwrap_or_else(|_| "Microphone".into())})).collect();
+        let recording = self
+            .capture
+            .lock()
+            .map_err(failure)?
+            .as_ref()
+            .is_some_and(|c| !c.done.load(Ordering::Acquire));
+        let mut status = json!({"devices":devices, "default_input":default_input, "recording":recording,
+            "model_available":profile.path().is_file(),
+            "recognizer":super::transcribe::recognizer_label()?, "speaker":"Windows local voice", "max_seconds":30});
+        let inventory = (|| -> Result<Value, JarvisError> {
+            let (tx, rx) = mpsc::channel();
+            self.speaker()?
+                .send(SpeechCommand::Inventory(tx))
+                .map_err(failure)?;
+            rx.recv_timeout(Duration::from_secs(10)).map_err(failure)?
+        })();
+        match inventory {
+            Ok(data) => status
+                .as_object_mut()
+                .unwrap()
+                .extend(data.as_object().unwrap().clone()),
+            Err(error) => {
+                status["output_error"] = json!(error.to_string());
+            }
+        }
+        Ok(status)
+    }
+
+    fn start(&self, device: Option<usize>, automatic: bool) -> Result<Value, JarvisError> {
+        self.begin(device, automatic, None)
+    }
+
+    fn start_interruptible(
+        &self,
+        device: Option<usize>,
+        output: Option<usize>,
+    ) -> Result<Value, JarvisError> {
+        self.begin(device, true, Some(output))
     }
 
     fn poll(&self, id: Option<&str>) -> Result<Value, JarvisError> {
@@ -302,6 +343,7 @@ impl AudioService for WindowsAudio {
             output["xruns"] = json!(state.xruns);
             output["error"] = json!(state.error);
             output["input_changed"] = json!(state.input_changed);
+            output["interrupted"] = json!(state.interrupted);
         }
         Ok(output)
     }
@@ -349,15 +391,25 @@ impl AudioService for WindowsAudio {
         language: &str,
         output: Option<usize>,
     ) -> Result<Value, JarvisError> {
-        if self
-            .capture
-            .lock()
-            .map_err(failure)?
-            .as_ref()
-            .is_some_and(|c| !c.done.load(Ordering::Acquire))
+        let slot = self.capture.lock().map_err(failure)?;
+        let state = if let Some(capture) = slot.as_ref().filter(|c| !c.done.load(Ordering::Acquire))
         {
-            return Err(failure("Speech output is muted while recording"));
-        }
+            if capture.echo_output != Some(output) {
+                return Err(failure(
+                    "Speech output is muted while recording or echo route differs",
+                ));
+            }
+            let state = capture.progress.lock().map_err(failure)?;
+            if state.phase == "listening" || state.interrupted {
+                return Ok(json!({"queued":false, "interrupted":true}));
+            }
+            if state.phase == "error" {
+                return Err(failure("Echo-cancelled microphone failed"));
+            }
+            Some(state)
+        } else {
+            None
+        };
         let (tx, rx) = mpsc::channel();
         self.speaker()?
             .send(SpeechCommand::Speak(
@@ -367,6 +419,8 @@ impl AudioService for WindowsAudio {
                 tx,
             ))
             .map_err(failure)?;
+        drop(state);
+        drop(slot);
         rx.recv_timeout(Duration::from_secs(10)).map_err(failure)?
     }
     fn stop(&self) -> Result<Value, JarvisError> {
@@ -413,7 +467,11 @@ fn capture(
     stop: &Receiver<()>,
     ready: mpsc::SyncSender<Result<(InputRoute, Option<cpal::DeviceId>), JarvisError>>,
     progress: Arc<Mutex<Progress>>,
+    echo: Option<(String, Sender<SpeechCommand>)>,
 ) -> Result<Vec<f32>, JarvisError> {
+    if let Some((output, speaker)) = echo {
+        return capture_echo(selected_device, stop, ready, progress, &output, &speaker);
+    }
     let start = || -> Result<_, JarvisError> {
         let host = cpal::default_host();
         let device = match selected_device {
@@ -605,6 +663,124 @@ fn capture(
             return Err(failure("Recording limit reached; nothing sent"));
         }
         Ok(manual)
+    }
+}
+
+fn capture_echo(
+    selected_device: Option<usize>,
+    stop: &Receiver<()>,
+    ready: mpsc::SyncSender<Result<(InputRoute, Option<cpal::DeviceId>), JarvisError>>,
+    progress: Arc<Mutex<Progress>>,
+    output: &str,
+    speaker: &Sender<SpeechCommand>,
+) -> Result<Vec<f32>, JarvisError> {
+    struct OutputLease<'a>(&'a Sender<SpeechCommand>);
+    impl Drop for OutputLease<'_> {
+        fn drop(&mut self) {
+            // Expiry/error/client loss ends the authorized duplex turn as well as capture.
+            let (tx, _rx) = mpsc::channel();
+            let _ = self.0.send(SpeechCommand::Stop(tx));
+        }
+    }
+    let _output_lease = OutputLease(speaker);
+    let setup: Result<_, JarvisError> = (|| {
+        let host = cpal::default_host();
+        let device = match selected_device {
+            Some(index) => host.input_devices().map_err(failure)?.nth(index),
+            None => host.default_input_device(),
+        }
+        .ok_or_else(|| failure("Selected microphone is unavailable"))?;
+        let id = device.id().map_err(failure)?;
+        let input = InputRoute {
+            name: device.description().map_err(failure)?.name().to_owned(),
+            sample_rate: 16000,
+            channels: 1,
+        };
+        let source = super::echo::EchoCapture::open(id.id(), output)?;
+        let detector = vad::load()?;
+        Ok((
+            source,
+            detector,
+            input,
+            selected_device.is_none().then_some(id),
+        ))
+    })();
+    let (source, mut detector, default_input_id) = match setup {
+        Ok((source, detector, input, default_input_id)) => {
+            let _ = ready.send(Ok((input, default_input_id.clone())));
+            (source, detector, default_input_id)
+        }
+        Err(error) => {
+            let _ = ready.send(Err(error.clone()));
+            return Err(error);
+        }
+    };
+    let mut pending = VecDeque::new();
+    let mut window = VecDeque::new();
+    let mut turn = TurnDetector::default();
+    let mut checked = Instant::now();
+    let mut last_pcm = Instant::now();
+    loop {
+        if !matches!(stop.try_recv(), Err(mpsc::TryRecvError::Empty)) {
+            return Ok(Vec::new());
+        }
+        if progress.lock().map_err(failure)?.heartbeat.elapsed() > Duration::from_secs(6) {
+            return Err(failure(
+                "Microphone client disconnected; recording discarded",
+            ));
+        }
+        if checked.elapsed() >= Duration::from_secs(1) {
+            if default_input_changed(default_input_id.as_ref()) {
+                progress.lock().map_err(failure)?.input_changed = true;
+                return Err(failure(
+                    "Windows default microphone changed; recording discarded",
+                ));
+            }
+            source.check_routes()?;
+            checked = Instant::now();
+        }
+        let pcm = source.read()?;
+        if pcm.is_empty() {
+            if last_pcm.elapsed() > Duration::from_secs(3) {
+                return Err(failure("Echo-cancelled microphone stalled; nothing sent"));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+        last_pcm = Instant::now();
+        pending.extend(pcm);
+        while pending.len() >= 1600 {
+            let frame: Vec<f32> = pending.drain(..1600).collect();
+            window.extend(frame.iter().copied());
+            while window.len() > 15360 {
+                window.pop_front();
+            }
+            let probability = vad::probability(&mut detector, window.make_contiguous())?;
+            turn.push(&frame, probability >= 0.5);
+            let mut state = progress.lock().map_err(failure)?;
+            if turn.listening && !state.interrupted {
+                // The registered start's barge_in contract authorizes purging ONLY this
+                // AudioService's SAPI queue. Stop before any ASR or model/new machine action.
+                let (tx, rx) = mpsc::channel();
+                speaker.send(SpeechCommand::Stop(tx)).map_err(failure)?;
+                rx.recv_timeout(Duration::from_secs(2)).map_err(failure)??;
+                state.interrupted = true;
+            }
+            state.phase = if turn.listening {
+                "listening"
+            } else {
+                "waiting"
+            };
+            state.level =
+                ((frame.iter().map(|s| s * s).sum::<f32>() / 1600.).sqrt() * 8.).clamp(0., 1.);
+            if turn.complete {
+                return if turn.truncated {
+                    Err(failure("Speech exceeded 30 seconds; nothing sent"))
+                } else {
+                    Ok(turn.samples)
+                };
+            }
+        }
     }
 }
 

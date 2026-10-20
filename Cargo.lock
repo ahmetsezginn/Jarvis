@@ -470,6 +470,7 @@ dependencies = [
  "uuid",
  "whisper-rs",
  "windows",
+ "windows-core",
  "windows-sys",
 ]
 

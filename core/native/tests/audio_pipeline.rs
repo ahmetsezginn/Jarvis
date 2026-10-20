@@ -19,6 +19,7 @@ struct FakeAudio(
     AtomicUsize,
     Mutex<Option<(String, String, Option<usize>)>>,
     Mutex<Option<String>>,
+    Mutex<Option<(Option<usize>, Option<usize>)>>,
 );
 impl FakeAudio {
     fn response(&self) -> Result<Value, JarvisError> {
@@ -31,6 +32,14 @@ impl AudioService for FakeAudio {
         self.response()
     }
     fn start(&self, _: Option<usize>, _: bool) -> Result<Value, JarvisError> {
+        self.response()
+    }
+    fn start_interruptible(
+        &self,
+        device: Option<usize>,
+        output: Option<usize>,
+    ) -> Result<Value, JarvisError> {
+        *self.3.lock().unwrap() = Some((device, output));
         self.response()
     }
     fn poll(&self, _: Option<&str>) -> Result<Value, JarvisError> {
@@ -83,6 +92,14 @@ fn malformed_voice_requests_and_paths_never_reach_devices() {
     for (name, args) in [
         ("speech_start", json!({"device_index":true})),
         ("speech_start", json!({"automatic":"yes"})),
+        ("speech_start", json!({"automatic":true,"barge_in":"yes"})),
+        ("speech_start", json!({"barge_in":true})),
+        ("speech_start", json!({"automatic":false,"barge_in":true})),
+        ("speech_start", json!({"output_device_index":0})),
+        (
+            "speech_start",
+            json!({"automatic":true,"barge_in":true,"output_device_index":32}),
+        ),
         ("speech_poll", json!({"recording_id":"fake"})),
         ("speech_start", json!({"device_index":32})),
         ("speech_start", json!({"path":"C:\\record.wav"})),
@@ -118,12 +135,65 @@ fn malformed_voice_requests_and_paths_never_reach_devices() {
     }
     assert_eq!(audio.0.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+#[ignore = "real microphone and speaker AEC-only test; pause wake, no desktop, quiet room; no recordings or agent actions"]
+fn real_echo_source_keeps_own_speech_out_of_a_turn() {
+    use std::time::{Duration, Instant};
+    let mut registry = ToolRegistry::new();
+    for tool in AudioTool::all(jarvis_core::audio::current_service(), None) {
+        registry.register(tool).unwrap();
+    }
+    let engine = Executor::new(
+        registry,
+        Arc::new(DefaultPolicyEngine),
+        Arc::new(MemoryAuditSink::default()),
+        Arc::new(FakeDesktopPlatform::default()),
+    );
+    let call = |name: &str, args: Value| {
+        let result = engine.execute(ToolRequest::new(name, args, RequestSource::Internal));
+        assert_eq!(result.status, ToolStatus::Success, "{name}: {result:?}");
+        result.data
+    };
+    let start = call("speech_start", json!({"automatic":true,"barge_in":true}));
+    assert_eq!(start["echo_cancelled"], true);
+    let id = start["recording_id"].as_str().unwrap();
+    call(
+        "speech_speak",
+        json!({"text":"Bu bir yankı giderme denemesi. Jarvis konuşurken kendi sesini yeni bir istek olarak algılamamalı. Bu denemede hiçbir uygulama açılmayacak.","language":"tr"}),
+    );
+    let began = Instant::now();
+    let mut polls = 0;
+    let mut interrupted = false;
+    let mut max_level = 0_f64;
+    let mut phases = std::collections::BTreeSet::new();
+    while began.elapsed() < Duration::from_secs(9) {
+        std::thread::sleep(Duration::from_millis(100));
+        let status = call("speech_poll", json!({"recording_id":id}));
+        assert!(status["error"].is_null(), "{status:?}");
+        interrupted |= status["interrupted"] == true;
+        phases.insert(status["phase"].as_str().unwrap().to_owned());
+        max_level = max_level.max(status["level"].as_f64().unwrap_or(0.));
+        polls += 1;
+    }
+    call("speech_stop", json!({}));
+    call("speech_cancel", json!({"recording_id":id}));
+    println!(
+        "AEC source polls={polls}, phases={phases:?}, max_clean_level={max_level:.4}, interrupted={interrupted}; no transcript or dispatch"
+    );
+    assert!(
+        !interrupted,
+        "Own speaker output or room speech triggered a turn; investigate acoustics before acceptance"
+    );
+    assert_eq!(phases, ["waiting".to_owned()].into());
+}
 #[test]
 fn voice_operations_use_the_normal_policy_boundary() {
     let audio = Arc::new(FakeAudio::default());
     let engine = executor(audio.clone(), Arc::new(Deny));
     for (name, args) in [
         ("speech_start", json!({"automatic":true})),
+        ("speech_start", json!({"automatic":true,"barge_in":true})),
         (
             "speech_poll",
             json!({"recording_id":uuid::Uuid::new_v4().to_string()}),
@@ -165,6 +235,27 @@ fn voice_operations_use_the_normal_policy_boundary() {
         *audio.1.lock().unwrap(),
         Some(("Merhaba".into(), "tr".into(), Some(1)))
     );
+}
+
+#[test]
+fn interruptible_capture_binds_native_input_and_render_only_after_policy() {
+    let audio = Arc::new(FakeAudio::default());
+    let args = json!({"automatic":true,"barge_in":true,"device_index":2,"output_device_index":1});
+    let denied = executor(audio.clone(), Arc::new(Deny)).execute(ToolRequest::new(
+        "speech_start",
+        args.clone(),
+        RequestSource::Brain,
+    ));
+    assert_eq!(denied.status, ToolStatus::Denied);
+    assert_eq!(*audio.3.lock().unwrap(), None);
+    let allowed = executor(audio.clone(), Arc::new(DefaultPolicyEngine)).execute(ToolRequest::new(
+        "speech_start",
+        args,
+        RequestSource::Brain,
+    ));
+    assert_eq!(allowed.status, ToolStatus::Success);
+    assert_eq!(*audio.3.lock().unwrap(), Some((Some(2), Some(1))));
+    assert_eq!(audio.0.load(Ordering::SeqCst), 1);
 }
 
 #[test]

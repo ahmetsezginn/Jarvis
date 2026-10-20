@@ -15,6 +15,7 @@ struct Arguments {
     language: Option<String>,
     text: Option<String>,
     automatic: Option<bool>,
+    barge_in: Option<bool>,
     output_device_index: Option<usize>,
 }
 
@@ -54,7 +55,12 @@ impl AudioTool {
         let args: Arguments = serde_json::from_value(value.clone()).map_err(|_| invalid())?;
         let object = value.as_object().ok_or_else(invalid)?;
         let allowed: &[&str] = match self.name {
-            "speech_start" => &["device_index", "automatic"],
+            "speech_start" => &[
+                "device_index",
+                "automatic",
+                "barge_in",
+                "output_device_index",
+            ],
             "speech_poll" => &["recording_id"],
             "speech_finish" => &["recording_id", "language"],
             "speech_cancel" => &["recording_id"],
@@ -66,6 +72,12 @@ impl AudioTool {
         }
         if args.device_index.is_some_and(|x| x >= 32)
             || args.output_device_index.is_some_and(|x| x >= 32)
+        {
+            return Err(invalid());
+        }
+        if self.name == "speech_start"
+            && ((args.barge_in == Some(true) && args.automatic != Some(true))
+                || (object.contains_key("output_device_index") && args.barge_in != Some(true)))
         {
             return Err(invalid());
         }
@@ -125,6 +137,9 @@ impl Tool for AudioTool {
         let args = self.arguments(value)?;
         match self.name {
             "speech_status" => self.audio.status(),
+            "speech_start" if args.barge_in == Some(true) => self
+                .audio
+                .start_interruptible(args.device_index, args.output_device_index),
             "speech_start" => self
                 .audio
                 .start(args.device_index, args.automatic.unwrap_or(false)),

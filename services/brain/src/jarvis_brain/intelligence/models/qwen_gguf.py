@@ -95,7 +95,9 @@ def parse_search_plan(output: str) -> IntentResult:
 
 
 def default_gguf_path() -> Path:
-    return Path(__file__).resolve().parents[6] / "models/qwen3-4b-gguf" / MODEL_FILENAME
+    from jarvis_brain.runtime_paths import models_directory
+
+    return models_directory() / "qwen3-4b-gguf" / MODEL_FILENAME
 
 
 def build_prompt(
@@ -200,7 +202,7 @@ class QwenGgufIntentModel:
                 runtime = importlib.import_module("llama_cpp")
                 if importlib.metadata.version("llama-cpp-python") != RUNTIME_VERSION:
                     raise ModelLoadError("llama-cpp-python version does not match pinned runtime")
-                if self.gpu_layers == -1 and not runtime.llama_supports_gpu_offload():
+                if self.gpu_layers != 0 and not runtime.llama_supports_gpu_offload():
                     raise ModelLoadError("GPU requested but runtime has no GPU offload support")
                 self._grammar = runtime.LlamaGrammar.from_json_schema(
                     json.dumps(INTENT_JSON_SCHEMA), verbose=False
@@ -1050,7 +1052,7 @@ An affirmative reply confirms a pending concrete browser choice, never invents a
 
     def _prepare_cuda_dlls(self) -> None:
         """Expose only installed inference dependency directories, never caller launch paths."""
-        if sys.platform != "win32" or self._dll_directories:
+        if sys.platform != "win32" or self.gpu_layers == 0 or self._dll_directories:
             return
         libraries = []
         for package, relative, library in (

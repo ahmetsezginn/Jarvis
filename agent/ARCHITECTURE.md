@@ -1,5 +1,26 @@
 # JARVIS Architecture
 
+## Installed CPU/NVIDIA runtime (2026-10-20)
+
+The source and installed product share the same Brain agent, Qt controller and native tool
+pipeline. Frozen Qt selects a fixed sibling `JarvisWorker.exe`; ordinary source startup keeps
+the Python module worker. A trusted fixed bootstrap owns Core startup, not model tool execution.
+No model output becomes an executable path, shell command or installed configuration field.
+
+Brain resolves models from a trusted `JARVIS_MODELS_DIR`, otherwise beside the frozen executable,
+otherwise the checkout. Native speech/VAD use the same trusted override, or the installed
+`<app>/bin` executable plus `<app>/jarvis-runtime.json` marker, retaining the checkout fallback.
+Artifact names/checksums and provider interfaces remain unchanged. CPU mode explicitly selects
+the separate pinned CPU llama library and CPU speech; it does not preload NVIDIA dependencies.
+Nonzero GPU offload requires an actual GPU-capable runtime. There is no automatic compute fallback.
+
+Installer generation and binaries remain local under ignored `.local-distribution/` by explicit
+user request. The per-user app directory contains code, libraries and provisioned models; the
+existing native organizer data stays under `%LOCALAPPDATA%/JARVIS`, outside the installation.
+Optional wake setup reuses protected service/fixed limited user-task architecture with UAC.
+Setup can download checksum-pinned models explicitly; application startup does not download.
+See [distribution validation](../docs/brain/DISTRIBUTION_2026-10-20.md).
+
 ## Catalog-backed Steam game shortcuts (2026-10-19)
 
 The existing open_file tool now supports a narrow native metadata adapter for .url Steam game
@@ -136,6 +157,31 @@ visible and private rendered data stays outside model history on error exits.
 
 ## Current desktop/voice revision (2026-10-16)
 
+Voice interruption revision (2026-10-20): normal replies in Auto conversation arm a native
+echo-cancelled capture before queueing SAPI. The existing registered speech_start accepts
+barge_in=true only with automatic=true and an optional validated output-device index. Core
+resolves the exact SAPI token's native DeviceId and selected CPAL input to active IMMDevice
+collection indices. Windows Voice Capture DSP source mode owns capture/render synchronization
+and emits 16kHz mono PCM. A shared all-zero render stream keeps that same endpoint active
+between speech segments, without changing the mixer. No new runtime DLL/model is provisioned;
+the existing Windows binding is extended, with its already-used windows-core dependency direct.
+
+Silero/TurnDetector operate on cleaned audio with the existing 800ms preroll and two-frame
+onset. Native onset purges this AudioService's SAPI queue immediately, before UI polling or
+ASR; speech_poll exposes only interrupted/phase/level/error metadata. The UI invalidates stale
+speech acknowledgements, keeps the same capture through the user's turn and sends only the
+completed final transcript to the ordinary Brain session. Finished actions are never replayed
+or undone by an interruption. There is no live LLM inference cancellation: the current reply
+has already finished generating when SAPI speaks it.
+
+The normal lease, per-turn bound, default-microphone changes and explicit-device failures
+remain enforced. Echo-route disappearance, discontinuity or stalled output rejects the PCM;
+teardown purges the associated speech queue. Failed AEC opening is visibly reported and uses
+the existing turn-by-turn voice path for that session, not raw duplex capture. Preparation
+and welcome remain microphone-closed; manual hold-to-talk remains half duplex. No transcript
+word filters, Python device access, recordings, cloud/API or wake-service change is involved.
+See [barge-in evidence and remaining validation](../docs/brain/BARGE_IN.md).
+
 Latest normal-answer follow-up: asynchronous SAPI output remains busy until WaitUntilDone(0)
 reports the entire queue completed. RunningState=0 is waiting, not completion. speech_poll
 adds output_phase queued/speaking/idle and conservatively retains speaking=true while pending
@@ -208,9 +254,10 @@ client heartbeat lease; abandoned pending PCM is discarded, including completed 
 xrun count and actual SAPI running state. It exposes no PCM. Qt serializes voice control calls,
 discards stale capture/output callbacks and maps real states to three persistent animations:
 waiting orbit, input-level bars, speaking flow. Processing has its own visual state. Capture
-pauses during ASR/agent reasoning/speech; automatic rearm follows actual SAPI completion with a
-short echo tail delay. This is half duplex; acoustic echo cancellation, wake words and neural
-Kokoro output remain unimplemented. Manual hold-to-talk can interrupt output. Cancelled or
+pauses during ASR/agent reasoning. Normal automatic reply output now uses the native AEC
+interruption path above; startup/manual/unavailable-AEC output retains actual-completion gating
+and a short echo tail delay. The independent wake service is separate; neural Kokoro output
+remains unimplemented. Manual hold-to-talk can interrupt output. Cancelled or
 expired recordings never become agent input; hitting the manual deadline cancels rather than
 sending a clipped command. See [desktop setup](../services/desktop/README.md) and
 [verification](../docs/brain/DESKTOP_VOICE.md).

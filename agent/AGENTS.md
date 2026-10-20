@@ -433,6 +433,34 @@ When uncertain, preserve this invariant:
 
 ## Active model revision (2026-10-16)
 
+Distribution authorization (2026-10-20, latest): user requested unused local-model cleanup,
+clear installation documentation, a standalone Windows installer and a final source push.
+CPU support is explicitly requested despite slower inference. Keep ALL installer build tools,
+scripts, payloads and binaries under ignored `.local-distribution/`; do not commit or push them.
+Version application portability changes, pinned source CPU requirements and documentation only.
+Installed resources use a fixed application models directory (or trusted process environment),
+never model-generated paths. CPU must use the pinned CPU native runtime without CUDA discovery;
+explicit GPU requests must reject a CPU-only library rather than silently change compute mode.
+Frozen Qt launches only its fixed sibling worker. Trusted launch/setup bootstrap may start its
+fixed Core executable, as the source launcher does; AI effects retain the complete Core pipeline.
+Setup may explicitly download pinned checksum-verified models, while normal runtime stays offline.
+Optional wake installation retains protected LocalService/user-task separation and actual UAC.
+Cleanup must verify unused paths, preserve active models and personal data, and report real tests.
+
+Voice interruption authorization (2026-10-20, latest): user requests speaking over normal
+JARVIS replies in Auto conversation. This supersedes the half-duplex-only restriction for
+that path. Arm native Windows Voice Capture DSP AEC before SAPI output, using exact native
+microphone/render endpoint metadata. Speech onset from cleaned PCM may purge ONLY this
+AudioService's output queue under the registered speech_start(barge_in=true) contract.
+Never infer interruption from raw amplitude, transcript matching or language keywords.
+Keep the preroll, bounded utterance, six-second lease, cancellation, route checks and the
+same final-transcript Brain path. No PCM/endpoint IDs leave Rust; no recordings, cloud,
+ONNX, driver/mixer changes or new wake-service permission. Validation/policy still gate
+the start request; interruption does not authorize a new machine action or replay one.
+Startup preparation/welcome still finish with the microphone closed. Manual capture remains
+half duplex. If AEC cannot open, explicitly report unavailability and retain existing
+turn-by-turn voice; never silently enable unprotected simultaneous playback/capture.
+
 Activation-dialogue correction (2026-10-19, latest): user explicitly replaced early listening
 during preload with an open window, spoken estimated countdown, then a ready welcome and only
 THEN voice input. Block both automatic/manual capture until actual model_ready and completed

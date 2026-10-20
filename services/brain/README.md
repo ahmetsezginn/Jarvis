@@ -2,6 +2,17 @@
 
 ## Current runtime: capability agent (2026-10-16)
 
+Installed preview distributions bundle Python/Qt and both pinned native compute variants;
+choose CPU or NVIDIA during setup. No Python/Rust installation is required for recipients.
+Installer tooling and binaries remain local and are not stored in this Git repository.
+
+For a clean source environment without NVIDIA, install
+`scripts/models/requirements-gguf-cpu.txt` **instead of** the CUDA requirements below, then set
+`JARVIS_MODEL_DEVICE=cpu` and `JARVIS_SPEECH_DEVICE=cpu` before launching. The CPU wheel is the
+same pinned 0.3.35 release with CPU-only native DLLs. Setting zero GPU layers on the CUDA wheel
+does not remove that wheel's native NVIDIA-driver dependency. Do not mix the two wheel variants
+in one source environment. No compute mode silently falls back to another.
+
 `ask`/`repl` now use a bounded model/tool-result loop through `AgentModel` and
 `CapabilityRegistry`. They do not run the archived intent/TurnPlan classifier chain.
 New trusted capabilities register schema, handler, effect metadata, Core dependencies and
@@ -29,13 +40,15 @@ py -3.12 -m venv .\services\brain\.venv
 The GGUF and manifest were provisioned on the development host. Downloading is explicit;
 startup verifies the pinned local artifact and never downloads or silently selects another model.
 Model files remain ignored by Git. ONNX is disabled. No training, cloud API or inference server
-is needed. `JARVIS_MODEL_DEVICE=cpu` selects CPU explicitly; CPU speed is unmeasured.
+is needed. `JARVIS_MODEL_DEVICE=cpu` selects CPU explicitly. A packaged CPU greeting was much
+slower on the development host; see [measured distribution checks](../../docs/brain/DISTRIBUTION_2026-10-20.md).
 The 9B GPU profile keeps the output projection on CPU (32 GPU blocks, batch 64) to leave
 headroom on this host's 8 GB GPU. Full offload exhausted the practical GPU budget in a long run.
 Latency and headroom are measured separately from semantic correctness.
 
 `jarvis` defaults to this new profile. `jarvis -Profile qwen3-4b` selects the old GGUF for
-comparison, still using the new loop. Direct Python uses `JARVIS_GGUF_PROFILE=qwen35-9b`
+comparison if separately provisioned; it is no longer retained on the development host or
+included in the installer. It still uses the new loop. Direct Python uses `JARVIS_GGUF_PROFILE=qwen35-9b`
 (default) or `qwen3-4b`; unknown profiles fail. `model-info` reports the selected artifact
 without loading it. `--fast-router` affects only legacy `predict` diagnostics, never execution.
 

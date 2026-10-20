@@ -1,5 +1,12 @@
 # JARVIS agent documents
 
+Windows installer, explicit CPU/NVIDIA runtime, local model cleanup and distribution validation:
+[DISTRIBUTION_2026-10-20.md](../docs/brain/DISTRIBUTION_2026-10-20.md).
+Installer tooling and artifacts are deliberately local-only; source setup remains documented.
+
+Native echo-cancelled voice interruption in Auto conversation:
+[BARGE_IN.md](../docs/brain/BARGE_IN.md).
+
 Project documents have one canonical location in this folder. The root AGENTS.md is only an
 automatic-discovery entry point. Commands and source paths in these documents are relative to
 the repository root, unless explicitly stated otherwise.

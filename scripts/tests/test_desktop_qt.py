@@ -36,6 +36,235 @@ def controller(app):
     return value, calls, sent
 
 
+def test_frozen_desktop_uses_fixed_bundled_worker_instead_of_a_python_install(
+    app, monkeypatch, tmp_path
+):
+    import sys
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "Jarvis.exe"))
+    value = desktop.Controller(launch_worker=False)
+    assert value.worker.program() == str(tmp_path / "JarvisWorker.exe")
+    assert value.worker.arguments() == ["--brain-worker"]
+
+
+def barge_controller(app, *, acknowledge=True):
+    value, calls, sent = controller(app)
+    value._automatic = True
+    value.speak_text("Here is the explanation you requested.")
+    assert calls[-1][:2] == ("speech_start", {"automatic": True, "barge_in": True})
+    calls[-1][2]({"recording_id": "barge", "echo_cancelled": True}, None)
+    assert calls[-1][0] == "speech_speak"
+    if acknowledge:
+        calls[-1][2]({"queued": True}, None)
+    return value, calls, sent
+
+
+def test_barge_arms_verified_echo_capture_before_sapi_and_retains_one_microphone(app):
+    value, calls, sent = barge_controller(app)
+    value.pollVoice()
+    calls[-1][2]({"phase": "waiting", "speaking": True, "level": 0.002}, None)
+    assert value.voicePhase == "speaking" and value.recording and not sent
+    value.resume_automatic()
+    assert sum(tool == "speech_start" for tool, _, _ in calls) == 1
+    value.pollVoice()
+    calls[-1][2]({"phase": "waiting", "speaking": False}, None)
+    assert value.voicePhase == "waiting" and value.recording and not sent
+    value.cancelVoice()
+
+
+@pytest.mark.parametrize("late_ack", [False, True])
+def test_barge_interrupt_rejects_old_ack_and_submits_only_complete_new_turn(
+    app, late_ack
+):
+    value, calls, sent = barge_controller(app, acknowledge=not late_ack)
+    speech = next(call for call in calls if call[0] == "speech_speak")
+    value.pollVoice()
+    calls[-1][2](
+        {"phase": "listening", "interrupted": True, "speaking": False, "level": 0.6},
+        None,
+    )
+    speech[2]({"queued": True}, None)
+    assert value.voicePhase == "listening" and not value._speaking and not sent
+    value.pollVoice()
+    calls[-1][2]({"phase": "complete", "interrupted": True}, None)
+    assert calls[-1][0] == "speech_finish"
+    assert any(call[0] == "speech_stop" for call in calls)
+    calls[-1][2](
+        {"text": "Actually, show tomorrow's tasks instead.", "language": "en"}, None
+    )
+    assert sent == ["Actually, show tomorrow's tasks instead."]
+    assert not value.recording and not value._barge_capture
+
+
+def test_barge_user_onset_before_output_queue_never_resurrects_old_explanation(app):
+    value, calls, sent = barge_controller(app, acknowledge=False)
+    calls[-1][2]({"queued": False, "interrupted": True}, None)
+    assert value.voicePhase == "listening" and not value._speaking and value.recording
+    assert not sent
+    value.cancelVoice()
+
+
+@pytest.mark.parametrize("action", ["end", "shutdown", "stop"])
+def test_barge_cancel_during_aec_open_discards_late_capture_without_speaking(
+    app, action
+):
+    value, calls, sent = controller(app)
+    value._automatic = True
+    value.speak_text("An obsolete explanation")
+    start = calls[-1]
+    if action == "end":
+        value.setAutomatic(False, -1)
+    elif action == "shutdown":
+        value.shutdown()
+    else:
+        value.stopSpeaking()
+    start[2]({"recording_id": "late-barge", "echo_cancelled": True}, None)
+    assert calls[-1][:2] == ("speech_cancel", {"recording_id": "late-barge"})
+    calls[-1][2]({"cancelled": True}, None)
+    assert not any(tool == "speech_speak" for tool, _, _ in calls)
+    assert not value._barge_capture and not value.recording and not sent
+
+
+def test_barge_aec_open_failure_is_visible_and_uses_existing_turn_by_turn_voice(app):
+    value, calls, sent = controller(app)
+    messages = []
+    value.message.connect(lambda role, text: messages.append((role, text)))
+    value._automatic = True
+    value.speak_text("A response")
+    calls[-1][2](None, "AEC endpoint unavailable")
+    assert calls[-1][0] == "speech_speak"
+    assert not value.recording and not value._barge_available
+    assert any(
+        role == "system" and "Voice interruption unavailable" in text
+        for role, text in messages
+    )
+    calls[-1][2]({"queued": True}, None)
+    value.pollVoice()
+    calls[-1][2]({"speaking": False}, None)
+    value.resume_automatic()
+    assert calls[-1][:2] == ("speech_start", {"automatic": True})
+    assert not sent
+    value.cancelVoice()
+
+
+def test_barge_missing_native_echo_confirmation_never_queues_voice(app):
+    value, calls, sent = controller(app)
+    value._automatic = True
+    value.speak_text("A response")
+    calls[-1][2]({"recording_id": "unprotected"}, None)
+    assert not any(tool == "speech_speak" for tool, _, _ in calls)
+    assert any(tool == "speech_cancel" for tool, _, _ in calls)
+    assert not value.automatic and not sent
+
+
+@pytest.mark.parametrize("reason", ["device", "fatal", "end"])
+def test_barge_teardown_stops_output_and_never_sends_partial_audio(app, reason):
+    value, calls, sent = barge_controller(app)
+    if reason == "end":
+        value.setAutomatic(False, -1)
+    else:
+        value.pollVoice()
+        status = {"phase": "error", "error": "lost capture"}
+        if reason == "device":
+            status["input_changed"] = True
+        calls[-1][2](status, None)
+    assert any(tool == "speech_stop" for tool, _, _ in calls)
+    assert calls[-1][0] == "speech_cancel"
+    assert not any(tool == "speech_finish" for tool, _, _ in calls)
+    assert not sent
+    if reason == "device":
+        value.setAutomatic(False, -1)
+
+
+def test_barge_cancel_during_transcription_discards_late_new_command(app):
+    value, calls, sent = barge_controller(app)
+    value.finishVoice()
+    finish = calls[-1]
+    value.setAutomatic(False, -1)
+    finish[2]({"text": "A cancelled instruction"}, None)
+    assert not sent and not value.automatic
+
+
+def test_barge_explicit_audio_devices_share_one_registered_reference_and_change_cancels(
+    app,
+):
+    value, calls, _ = controller(app)
+    value._automatic, value._device, value._output_device = True, 2, 1
+    value.speak_text("An explanation")
+    assert calls[-1][1] == {
+        "automatic": True,
+        "barge_in": True,
+        "device_index": 2,
+        "output_device_index": 1,
+    }
+    calls[-1][2]({"recording_id": "selected", "echo_cancelled": True}, None)
+    assert calls[-1][1]["output_device_index"] == 1
+    value.setOutputDevice(0)
+    assert calls[-1][:2] == ("speech_cancel", {"recording_id": "selected"})
+    assert not value.automatic
+
+
+def test_startup_welcome_remains_microphone_closed_until_actual_output_completion(app):
+    value, calls, _, _ = startup_controller(app)
+    value._startup_devices_ready = True
+    value.announce_startup()
+    assert calls[-1][0] == "speech_speak"
+    assert not any(tool == "speech_start" for tool, _, _ in calls)
+    calls[-1][2]({"queued": True}, None)
+    value.pollVoice()
+    calls[-1][2]({"speaking": False}, None)
+    assert not value._startup_greeting
+    value.resume_automatic()
+    assert calls[-1][:2] == ("speech_start", {"automatic": True})
+    value.cancelVoice()
+
+
+@pytest.mark.skipif(
+    os.environ.get("JARVIS_RUN_BARGE_LIVE") != "1",
+    reason="real QML/Core/default microphone/SAPI; quiet room, pause wake service, no desktop",
+)
+def test_real_qml_reply_arms_aec_and_waits_without_responding_to_itself(app):
+    value = desktop.Controller(launch_worker=False)
+    value._automatic = True
+    value._reply_language = "tr"
+    sent, messages, phases = [], [], []
+    value.send = sent.append  # Test audio can never dispatch a machine action to Brain.
+    value.message.connect(lambda role, text: messages.append((role, text)))
+    value.changed.connect(lambda: phases.append(value.voicePhase))
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("jarvis", value)
+    engine.load(QUrl.fromLocalFile(str(ROOT / "services/desktop/Main.qml")))
+    assert engine.rootObjects()
+    window = engine.rootObjects()[0]
+    try:
+        worker_event(
+            value,
+            {
+                "event": "response",
+                "text": "Bu bir konuşma denemesi. Jarvis konuşurken sizi de dinleyebilir. Bu denemede yalnızca kendi sesinin yankısı kontrol ediliyor; hiçbir görev çalıştırılmayacak.",
+            },
+        )
+        began = time.monotonic()
+        while time.monotonic() - began < 35 and not (
+            "speaking" in phases and value.voicePhase == "waiting"
+        ):
+            QTest.qWait(50)
+        assert value._barge_available and value._barge_capture
+        assert value.recording and "speaking" in phases and "waiting" in phases
+        assert "listening" not in phases and not sent
+        assert not any(role == "system" for role, _ in messages), messages
+        print(
+            f"QML real reply: speaking/waiting, echo capture active, no self-trigger or agent dispatch; {value.inputNote}"
+        )
+    finally:
+        value.shutdown()
+        until = time.monotonic() + 6
+        while value._calls and time.monotonic() < until:
+            QTest.qWait(50)
+        window.close()
+
+
 def startup_controller(app, microphone_name="BSX"):
     value = desktop.Controller(
         launch_worker=False, startup_voice=True, microphone_name=microphone_name

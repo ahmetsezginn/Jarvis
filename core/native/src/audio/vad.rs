@@ -6,8 +6,7 @@ use std::path::PathBuf;
 use whisper_rs::{WhisperVadContext, WhisperVadContextParams};
 
 pub fn model_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../models/whisper-vad/ggml-silero-v6.2.0.bin")
+    super::models_directory().join("whisper-vad/ggml-silero-v6.2.0.bin")
 }
 
 pub fn load() -> Result<WhisperVadContext, JarvisError> {

@@ -20,7 +20,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [target.'cfg(windows)'.dependencies]
 transcribe-cpp = { version = "=0.2.4", default-features = false, features = ["dynamic-backends", "vulkan"] }
 cpal = "=0.18.2"
-windows = { version = "0.62.2", features = ["Win32_System_Com", "Win32_Media_Speech", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_Storage_EnhancedStorage", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
+windows-core = "0.62.2"
+windows = { version = "0.62.2", features = ["Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_Media_Audio", "Win32_Media_DxMediaObjects", "Win32_Media_Speech", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_Storage_EnhancedStorage", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",

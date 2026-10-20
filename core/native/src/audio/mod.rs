@@ -4,6 +4,8 @@ use serde_json::Value;
 use std::sync::Arc;
 
 #[cfg(windows)]
+mod echo;
+#[cfg(windows)]
 mod sapi;
 mod transcribe;
 #[cfg(windows)]
@@ -15,6 +17,20 @@ mod windows;
 pub use transcribe::{
     recognizer_label, resample, speech_present, transcribe, transcribe_with_vocabulary,
 };
+
+fn models_directory() -> std::path::PathBuf {
+    if let Some(path) = std::env::var_os("JARVIS_MODELS_DIR") {
+        return path.into();
+    }
+    // Installed layout: <app>/bin/jarvis-core.exe plus a fixed runtime marker.
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(root) = executable.parent().and_then(std::path::Path::parent)
+        && root.join("jarvis-runtime.json").is_file()
+    {
+        return root.join("models");
+    }
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models")
+}
 
 /// Neutral spelling context from native catalog display names, never actions or launch targets.
 pub fn recognition_vocabulary(names: impl IntoIterator<Item = String>) -> String {
@@ -43,6 +59,15 @@ pub fn recognition_vocabulary(names: impl IntoIterator<Item = String>) -> String
 pub trait AudioService: Send + Sync {
     fn status(&self) -> Result<Value, JarvisError>;
     fn start(&self, device: Option<usize>, automatic: bool) -> Result<Value, JarvisError>;
+    fn start_interruptible(
+        &self,
+        _device: Option<usize>,
+        _output: Option<usize>,
+    ) -> Result<Value, JarvisError> {
+        Err(failure(
+            "Echo-cancelled listening is unavailable on this platform",
+        ))
+    }
     fn poll(&self, id: Option<&str>) -> Result<Value, JarvisError>;
     fn finish(&self, id: &str, language: &str, vocabulary: &str) -> Result<Value, JarvisError>;
     fn cancel(&self, id: &str) -> Result<Value, JarvisError>;

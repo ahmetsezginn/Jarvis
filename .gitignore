@@ -1,5 +1,12 @@
 # Build outputs
 /target/
+# Local installer tooling, staging, payloads and distributable builds (never publish to Git)
+/.local-distribution/
+/dist/
+/build/
+*.spec
+JarvisInstaller*.exe
+JarvisInstaller*.bin
 
 # Local caches and generated assets / diagnostic recordings
 /.cache/

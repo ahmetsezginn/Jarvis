@@ -87,6 +87,10 @@ class Controller(QObject):
         self._speaking = False
         self._speech_pending = False
         self._speech_epoch = 0
+        self._barge_capture = False
+        self._barge_available = True
+        self._barge_interrupted = False
+        self._startup_greeting = False
         self._polling = False
         self._shutting_down = False
         self._closing = False
@@ -109,8 +113,12 @@ class Controller(QObject):
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(1)  # Preserve native start/speak/stop order.
         self.worker = QProcess(self)
-        self.worker.setProgram(sys.executable)
-        self.worker.setArguments(["-u", "-m", "jarvis_brain.desktop.worker"])
+        if getattr(sys, "frozen", False):
+            self.worker.setProgram(str(Path(sys.executable).parent / "JarvisWorker.exe"))
+            self.worker.setArguments(["--brain-worker"])
+        else:
+            self.worker.setProgram(sys.executable)
+            self.worker.setArguments(["-u", "-m", "jarvis_brain.desktop.worker"])
         self.worker.readyReadStandardOutput.connect(self.read_worker)
         self.worker.readyReadStandardError.connect(lambda: self.worker.readAllStandardError())
         self.worker.errorOccurred.connect(
@@ -223,6 +231,8 @@ class Controller(QObject):
         self.changed.emit()
 
     def failure(self, text):
+        if self._barge_capture and self._recording:
+            self.cancelVoice()
         self._startup_voice_pending = False
         self._automatic = False
         self._voice_phase = "idle"
@@ -283,6 +293,7 @@ class Controller(QObject):
 
     @Slot()
     def stopSpeaking(self):
+        self._startup_greeting = False
         preparing = self._speech_pending
         self._speech_epoch += 1
         self._speech_pending = False
@@ -309,6 +320,7 @@ class Controller(QObject):
             if self._busy or self._shutting_down:
                 return
             self._automatic = True
+            self._barge_available = True
             self._device = device
             if self._model_loading:
                 self._startup_voice_pending = True
@@ -418,6 +430,13 @@ class Controller(QObject):
                 return
             if token is not None:
                 phase = data.get("phase")
+                if self._barge_capture and data.get("interrupted") and not self._barge_interrupted:
+                    self._barge_interrupted = True
+                    self._speech_epoch += (
+                        1  # A late output acknowledgement cannot revive the reply.
+                    )
+                    self._speech_pending = False
+                    self._speaking = False
                 if data.get("input_changed") and self._automatic and self._device < 0:
                     self.restart_default_input()
                 elif phase == "error":
@@ -426,7 +445,17 @@ class Controller(QObject):
                     self.failure(detail)
                 elif phase == "complete":
                     self.finishVoice()
+                elif (
+                    self._barge_capture
+                    and not self._barge_interrupted
+                    and (self._speech_pending or data.get("speaking"))
+                ):
+                    self._speaking = bool(data.get("speaking"))
+                    self._voice_phase = "speaking" if self._speaking else "processing"
+                    self.state("Speaking" if self._speaking else "Preparing voice", True)
                 else:
+                    if self._barge_capture:
+                        self._speaking = False
                     self._voice_phase = phase if phase in {"waiting", "listening"} else "opening"
                     self._level = float(data.get("level", 0.0))
                     self.state("Waiting for speech" if phase == "waiting" else "Listening", True)
@@ -448,6 +477,7 @@ class Controller(QObject):
                     starting,
                 )
                 if not self._speaking:
+                    self._startup_greeting = False
                     self.poll_timer.stop()
                     QTimer.singleShot(300, self.resume_automatic)
 
@@ -455,6 +485,9 @@ class Controller(QObject):
 
     def restart_default_input(self):
         # Native Core discarded the old route's PCM. Await teardown before reacquiring default.
+        if self._barge_capture:
+            self.stopSpeaking()
+        self._barge_capture = False
         token, self._recording_id = self._recording_id, None
         self._epoch += 1
         epoch = self._epoch
@@ -488,6 +521,9 @@ class Controller(QObject):
         if self._recording_id is None:
             return
         token, self._recording_id = self._recording_id, None
+        if self._barge_capture:
+            self.stopSpeaking()
+        self._barge_capture = False
         self._recording = False
         self.deadline.stop()
         self.poll_timer.stop()
@@ -546,6 +582,8 @@ class Controller(QObject):
     @Slot(int)
     def setOutputDevice(self, index):
         if -1 <= index < 32:
+            if index != self._output_device and self._barge_capture:
+                self.cancelVoice()  # Never reuse PCM with another render reference.
             self._output_device = index
 
     @Slot()
@@ -565,6 +603,75 @@ class Controller(QObject):
             self.changed.emit()
             QTimer.singleShot(300, self.resume_automatic)
             return
+        if (
+            self._automatic
+            and self._barge_available
+            and not self._model_loading
+            and not self._startup_voice_pending
+            and not self._startup_greeting
+        ):
+            self.start_barge(text)
+            return
+        self.queue_speech(text)
+
+    def start_barge(self, text):
+        # Arm native AEC BEFORE queueing output. SAPI and microphone share a verified render
+        # endpoint; raw microphone energy never decides whether to interrupt.
+        self._epoch += 1
+        epoch, speech_epoch = self._epoch, self._speech_epoch
+        self._recording = self._barge_capture = True
+        self._barge_interrupted = False
+        self._speech_pending = True
+        self._voice_phase = "opening"
+        self.state("Preparing voice", True)
+        arguments = {"automatic": True, "barge_in": True}
+        if self._device >= 0:
+            arguments["device_index"] = self._device
+        if self._output_device >= 0:
+            arguments["output_device_index"] = self._output_device
+
+        def started(data, error):
+            if (
+                epoch != self._epoch
+                or speech_epoch != self._speech_epoch
+                or self._shutting_down
+                or self._closing
+            ):
+                if data and data.get("recording_id"):
+                    self.core(
+                        "speech_cancel", {"recording_id": data["recording_id"]}, self.output_stopped
+                    )
+                # Stop output during microphone opening can invalidate only its speech epoch.
+                if epoch == self._epoch:
+                    self._recording = self._barge_capture = False
+                    self._speech_pending = False
+                    if not self._shutting_down and not self._closing:
+                        self.state("Ready", False)
+                        QTimer.singleShot(300, self.resume_automatic)
+                return
+            if error:
+                self._recording = self._barge_capture = False
+                self._barge_available = False
+                self.message.emit(
+                    "system",
+                    f"Voice interruption unavailable: {error}. Using turn-by-turn conversation.",
+                )
+                self.queue_speech(text)
+                return
+            self._recording_id = data["recording_id"]
+            if not data.get("echo_cancelled"):
+                self.cancelVoice()
+                self.failure("Core did not confirm echo cancellation; speech was not started.")
+                return
+            route = data.get("input", {})
+            if route.get("name"):
+                self._input_note = f"Input: {route['name']} · Echo cancellation"
+            self.poll_timer.start()
+            self.queue_speech(text)
+
+        self.core("speech_start", arguments, started)
+
+    def queue_speech(self, text):
         self._voice_phase = "processing"
         self._speech_pending = True
         self.state("Preparing voice", True)
@@ -580,6 +687,9 @@ class Controller(QObject):
 
     @Slot()
     def cancelVoice(self):
+        if self._barge_capture:
+            self.stopSpeaking()
+        self._barge_capture = False
         self._automatic = False
         self._epoch += 1
         epoch = self._epoch
@@ -703,9 +813,18 @@ class Controller(QObject):
             return
         if data.get("voice") and data.get("output_device"):
             self._output_note = f"{data['voice']} → {data['output_device']}"
+        if self._barge_capture and data.get("interrupted"):
+            self._barge_interrupted = True
+            self._speaking = False
+            self._voice_phase = "listening"
+            self.state("Listening", True)
+            self.poll_timer.start()
+            return
         self._speaking = True
         self._voice_phase = "speaking"
-        self.state("Speaking", self._model_loading and self._startup_voice_pending)
+        self.state(
+            "Speaking", self._barge_capture or (self._model_loading and self._startup_voice_pending)
+        )
         self.poll_timer.start()
 
     def device_status(self, data, error):
@@ -767,6 +886,7 @@ class Controller(QObject):
             text = "Sistem aktif. Merhaba, nasıl yardımcı olabilirim?"
         self.message.emit("assistant", text)
         if getattr(self, "voice_enabled", True):
+            self._startup_greeting = True
             self.speak_text(text)
         elif not self._model_loading:
             self.state("Ready", False)
@@ -812,7 +932,10 @@ def configure_appearance(app):
 
 
 def main():
-    from lifecycle import DesktopLifecycle
+    if __package__:
+        from .lifecycle import DesktopLifecycle
+    else:
+        from lifecycle import DesktopLifecycle
 
     app = QGuiApplication(sys.argv)
     configure_appearance(app)

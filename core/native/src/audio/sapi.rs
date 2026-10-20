@@ -40,6 +40,24 @@ fn language_matches(attributes: &str, language: &str) -> bool {
 }
 
 impl Speaker {
+    pub fn echo_endpoint(&self, output: Option<usize>) -> Result<String, JarvisError> {
+        let token = match output {
+            Some(index) => self
+                .outputs
+                .get(index)
+                .ok_or_else(|| failure("Speech output device is unavailable"))?,
+            None => &self.default_output,
+        };
+        // SAPI-owned endpoint metadata, never caller/model supplied. No name guessing.
+        unsafe {
+            token
+                .DataKey()
+                .and_then(|key| key.GetStringValue(&BSTR::from("DeviceId")))
+        }
+        .map(|id| id.to_string())
+        .map_err(failure)
+    }
+
     pub fn new() -> Result<Self, JarvisError> {
         let voice: ISpeechVoice =
             unsafe { CoCreateInstance(&SpVoice, None, CLSCTX_ALL) }.map_err(failure)?;

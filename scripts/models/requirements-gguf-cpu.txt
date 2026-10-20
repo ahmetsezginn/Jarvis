@@ -1,0 +1,7 @@
+# Official CPU-only Windows wheel; explicit setup, no NVIDIA driver or runtime download.
+llama-cpp-python @ https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.35/llama_cpp_python-0.3.35-py3-none-win_amd64.whl#sha256=31590ea000d5aff6f05f1e428048e72318a83709288159a5bd4dabec530080bb
+typing-extensions==4.16.0
+diskcache==5.6.3
+jinja2==3.1.6
+MarkupSafe==3.0.3
+numpy==2.5.2

@@ -1,5 +1,51 @@
 # Handoff
 
+LATEST distribution (2026-10-20): user requested unused-model cleanup, readable README,
+standalone JarvisInstaller and final source publication, then explicitly added CPU support.
+Installer tooling/scripts/staging/output are local-only under ignored `.local-distribution/`;
+none may be staged. App portability and pinned source CPU requirements belong in Git.
+Removed five verified-unused model/source directories (6,534,116,969 bytes /6.085GiB);
+retained active9B, TurboQ5, VAD and native speech/wake runtimes and personal data.
+Frozen Qt uses a fixed sibling worker; Brain/native resource paths support installed models.
+Separate CPU llama DLLs avoid CUDA lookup; all nonzero GPU requests reject a CPU-only runtime.
+README is now end-user-first with source guides linked. Notes/tasks remain outside appDir.
+See docs/brain/DISTRIBUTION_2026-10-20.md for final installer tests and measured limitations.
+This supersedes the barge-in publication state below; verify git log/status/origin for sync.
+Full final source checks: Rust136 passed /9 ignored; Brain plus scripts/Qt616 passed /209
+skipped; release build, workspace all-target Clippy/fmt and Ruff135 files passed. Real packaged
+9B greetings worked in CPU/NVIDIA; CPU was substantially slower and loaded no CUDA modules.
+Installed native CPU and NVIDIA speech passed synthetic TR/EN/auto cases. Installer QA caught
+and corrected preflight checksum rejection and frozen CLI argument handling; details in report.
+Final installer 0.3.0-preview.1 is 641,012,772 bytes (hash in report), with Turkish sharing
+instructions/checksum beside it. Its actual final CPU/GPU installation, model checks, QML/CLI,
+no-redownload GPU repair and data-preserving uninstall passed. QA used synthetic local data;
+the existing developer wake service remained Running. The unsigned preview is not tested on
+another machine; service installation was not repeated over the developer service.
+This publication includes the earlier barge-in source changes; installer files stay untracked.
+
+LATEST barge-in (2026-10-20): user authorized speaking over normal Auto conversation replies.
+Existing speech_start now validates barge_in=true only with automatic=true and optional bounded
+render index. Native Windows Voice Capture DSP source-mode AEC binds exact CPAL/SAPI endpoint
+metadata, owns synchronization, and supplies clean16k mono PCM. An all-zero shared render
+keeps the same endpoint active without mixer changes. Silero/TurnDetector retain800ms preroll;
+native onset purges only this AudioService's SAPI queue before polling/ASR. UI invalidates old
+acks and uses the same capture/final transcript/session; no effect replay or new action grant.
+Leases, limits, route changes and cancel/close reject partial/stale PCM. Initial preparation
+and welcome stay microphone-closed; manual capture stays half duplex. AEC-open failure is
+explicitly reported with existing turn-by-turn voice, never unprotected raw duplex.
+
+Rust workspace136 passed /9 opt-in ignored; Brain/Qt608 passed /205 skipped; workspace Clippy,
+fmt, Ruff and diff passed. Actual source mic/SAPI9s test passed; native synthetic filter
+double-talk passed (speech at6000ms, detected6300ms; one fixture, not latency guarantee).
+Actual QML/deployed Core/default AMD input/SAPI test passed19.81s with no self-trigger and
+continuous capture. Qt test uses a fixture reply through the normal handler, not new9B inference.
+Initial STA/MTA conflict and premature12s live-test deadline were fixed/documented, not skipped.
+User's own overlapping speech/room quality remains to be retested; old ASR/model failures remain.
+See docs/brain/BARGE_IN.md. No recordings/cloud/ONNX/model artifact or wake-service change.
+Validated Core deployed to target/debug, PID7736 at update, source/deployed hashes matched.
+Wake service restored to its previous Running state after live tests; verify live state later.
+This new feature is uncommitted/unpushed; prior publication is298ffb6 on origin/main.
+
 LATEST publication checkpoint (2026-10-20): user authorized committing/pushing all accumulated
 wake/default-mic/preload/activation/Steam/task-routine changes and refreshing GitHub presentation.
 README now introduces the actual Rust/Python/Qt product and links to current setup/evidence;

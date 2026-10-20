@@ -97,6 +97,17 @@ def test_checksum_mismatch_prevents_native_loading(fake_runtime, monkeypatch):
     assert not calls
 
 
+@pytest.mark.parametrize("layers", [-1, 1, 32])
+def test_explicit_gpu_offload_never_silently_uses_cpu_runtime(fake_runtime, monkeypatch, layers):
+    model, _native, calls = fake_runtime
+    runtime = qwen_gguf.importlib.import_module("llama_cpp")
+    monkeypatch.setattr(runtime, "llama_supports_gpu_offload", lambda: False)
+    model.gpu_layers = layers
+    with pytest.raises(ModelLoadError, match="GPU requested"):
+        model.load()
+    assert not calls
+
+
 @pytest.mark.parametrize("field", ["app_id", "path", "command", "tool"])
 def test_untrusted_fields_never_reach_core(fake_runtime, field):
     model, native, _calls = fake_runtime

@@ -92,8 +92,8 @@ impl ModelProfile {
         std::env::var_os("JARVIS_WHISPER_MODEL")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join(format!("../../models/whisper-{}", self.name))
+                super::models_directory()
+                    .join(format!("whisper-{}", self.name))
                     .join(self.file)
             })
     }

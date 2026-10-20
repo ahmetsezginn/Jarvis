@@ -1,8 +1,7 @@
 """Pinned local Qwen3.5 provider using its native non-thinking tool protocol."""
 
-from pathlib import Path
-
 from jarvis_brain.intelligence.models.qwen_gguf import QwenGgufIntentModel
+from jarvis_brain.runtime_paths import models_directory
 
 MODEL_ID = "Qwen/Qwen3.5-9B"
 REVISION = "99a1b2185534379e6e8b5ec869da25d3e7b3f73c"
@@ -18,10 +17,7 @@ class Qwen35GgufAgentModel(QwenGgufIntentModel):
     agent_presence_penalty = 0.0
 
     def __init__(self, model_path=None, *, gpu_layers=-1):
-        path = (
-            model_path
-            or Path(__file__).resolve().parents[6] / "models/qwen35-9b-reference" / FILENAME
-        )
+        path = model_path or models_directory() / "qwen35-9b-reference" / FILENAME
         # Keep the output projection on CPU on this 8GB GPU profile. Full offload can
         # exhaust Windows' dedicated budget as desktop GPU usage changes during a session.
         super().__init__(path, gpu_layers=32 if gpu_layers == -1 else gpu_layers)

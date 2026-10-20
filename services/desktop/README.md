@@ -54,11 +54,19 @@ speaking. After about 900ms of silence, the completed utterance is transcribed a
 the same agent session. The processing state covers transcription and reasoning. After actual
 speech output completion, JARVIS automatically returns to waiting. With **Speak replies** off,
 it returns after the text reply. **End conversation** or Escape turns automatic listening off.
-The microphone is paused while JARVIS processes or speaks; hold-to-talk can interrupt its voice.
+The microphone pauses during recognition and agent reasoning. During normal spoken replies,
+Auto conversation now uses native acoustic echo cancellation: start talking to interrupt the
+reply, then finish your new request. The same microphone capture retains the start of your
+sentence, waits for silence and sends the final transcript to the same conversation. An old
+reply does not resume. Interruption stops speech; it does not undo an already completed task.
+Preparation and the startup welcome still finish before the microphone opens. Manual
+hold-to-talk retains the existing turn-by-turn path. If Windows AEC cannot open for the chosen
+devices, a visible message explains that interruption is unavailable and turn-by-turn voice
+continues. See [implementation and measured limits](../../docs/brain/BARGE_IN.md).
 A running decoder finishes in Rust, but cancelling transcription discards its late result and
 never dispatches it. The UI itself has no wake-word detector; the independent service opens it.
-Queued synthesis/device startup also keeps output busy; automatic listening waits for the
-whole native speech queue to complete. Test voice alone does not exercise normal agent replies;
+Queued synthesis/device startup also keeps output busy; the ordinary turn-by-turn path waits for
+the whole native speech queue to complete. Test voice alone does not exercise normal agent replies;
 the live regression now includes the actual QML Send button and real agent worker.
 When locating an item, JARVIS recommends one likely match first, using your goal and current
 metadata. The same suggestion is spoken and shown as one card. Say it is not the right one to
@@ -76,7 +84,8 @@ after recognition so the same GPU serves Qwen reasoning. The first speech reques
 model and can take longer. No startup download occurs. This is the first local
 version: endpointing uses release in push-to-talk, or local CPU Silero GGML speech detection
 and silence in Auto conversation. No ONNX package or cloud speech is involved. Wake-word
-detection, full-duplex echo cancellation and neural Kokoro output are not included. TTS currently
+detection belongs to the independent service; native echo-cancelled reply interruption is now
+available in Auto conversation. Neural Kokoro output is not included. TTS currently
 uses installed English/Turkish Windows voices, including OneCore language-pack voices. Choose
 the pronunciation language with **Voice**, the destination with **Output**, then use **Test voice**
 to hear a fixed local sentence without sending anything to the agent. The selected voice and
